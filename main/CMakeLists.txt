@@ -1,3 +1,4 @@
-idf_component_register(SRCS "led_rgb_library.c" "ledc_basic_example_main.c"
-                    PRIV_REQUIRES esp_driver_ledc esp_driver_gpio
-                    INCLUDE_DIRS ".")
+idf_component_register(SRCS "led_rgb_library.c" "oneshot_read_main.c"
+                    PRIV_REQUIRES esp_adc
+                    INCLUDE_DIRS "."
+                    REQUIRES driver esp_adc esp_timer)
