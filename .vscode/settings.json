@@ -16,5 +16,10 @@
     "--query-driver=c:\\Users\\jeron\\.espressiftools\\tools\\riscv32-esp-elf\\esp-14.2.0_20241119\\riscv32-esp-elf\\bin\\riscv32-esp-elf-gcc.exe",
     "--compile-commands-dir=${workspaceFolder}\\build"
   ],
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "files.associations": {
+    "chrono": "c",
+    "random": "c",
+    "limits": "c"
+  }
 }
