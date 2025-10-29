@@ -25,8 +25,6 @@
 #define EXAMPLE_ADC1_CHAN1          ADC_CHANNEL_0 //Thermistor
 #define EXAMPLE_ADC_ATTEN           ADC_ATTEN_DB_12
 
-static int adc_raw[2];
-static int voltage[2];
 static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle);
 static void example_adc_calibration_deinit(adc_cali_handle_t handle);
 
@@ -58,52 +56,41 @@ static const char *TAG = "UART: ";
 #define BUF_SIZE (1024)
 static QueueHandle_t uart0_queue;
 
-static volatile bool print_temp=true;
-static uint8_t led_brightness = 0;
-static LED_RGB_t my_led;
+// ADC handles
 
-static adc_oneshot_unit_handle_t adc1_handle;
-static adc_cali_handle_t cali_pot = NULL, cali_term = NULL;
+typedef struct {
+    adc_oneshot_unit_handle_t adc1_handle;
+    adc_cali_handle_t cali_pot;
+    adc_cali_handle_t cali_term;
+} adc_ctx_t;
 
-// Function to read temperature from thermistor
-static float read_temperature(void){
+typedef struct {
+    int raw_pot;
+    int raw_term;
+    int volt_pot;    // mV
+    int volt_term;   // mV
+    float temp_c;
+    uint8_t brightness; // 0..255
+} adc_msg_t;
 
-    ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, EXAMPLE_ADC1_CHAN1, &adc_raw[1]));    
-    if (cali_term) {
-        adc_cali_raw_to_voltage(cali_term, adc_raw[1], &voltage[1]);
-    } else {
-        ESP_LOGW(TAG, "Calibration handle not initialized");
-        //No calibration, raw to voltage conversion
-        voltage[1] = (adc_raw[1] * VCC_MV) / ADC_MAX_RAW;
-    }
-    float v_therm_mv = (float)voltage[1];
-    // Avoid div by zero and out of range values
-    float v_over_vcc = v_therm_mv / VCC_MV;
-    if (v_over_vcc < 0.0001f) v_over_vcc = 0.0001f;
-    if (v_over_vcc > 0.9999f) v_over_vcc = 0.9999f;
+typedef enum {
+    COLOR_R,
+    COLOR_G,
+    COLOR_B
+} color_e;
 
-    // Calculate thermistor resistance (divisor: Vcc - R_fixed - R_therm - GND)
-    // Vout = Vcc * R_therm / (R_fixed + R_therm)  => R_therm = R_fixed * Vout / (Vcc - Vout)
-    float r_therm = (R_FIXED_OHMS * v_therm_mv) / (VCC_MV - v_therm_mv);
+typedef struct {
+    color_e color;
+    float min_v;
+    float max_v;
+} thr_msg_t;
 
-    // Beta equation to get temperature in Kelvin and Celsius
-    float temp_k = 1.0f / ( (1.0f / T0_K) + (1.0f / BETA_CONST) * logf(r_therm / R0_OHMS) );
-    float temp_c = temp_k - 273.15f;
+static QueueHandle_t adc_queue = NULL;
+static QueueHandle_t thr_queue = NULL;
+static QueueHandle_t uart_ctrl_queue = NULL;
 
-    return temp_c;
-}
+static SemaphoreHandle_t uart_mux = NULL;
 
-// Function to control LED color based on temperature thresholds
-
-static void led_temp_control(float temp){
-    uint8_t r = 0, g = 0, b = 0;
-
-    if (temp >= thr_red.min && temp <= thr_red.max) r = led_brightness;
-    if (temp >= thr_green.min && temp <= thr_green.max) g = led_brightness;
-    if (temp >= thr_blue.min && temp <= thr_blue.max) b = led_brightness;
-
-    set_LED_RGB_color(&my_led, r, g, b);
-}
 
 // GPIO ISR handler
 static void IRAM_ATTR gpio_isr_handler(void* arg){
@@ -111,58 +98,165 @@ static void IRAM_ATTR gpio_isr_handler(void* arg){
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
-// GPIO task to handle button events
-static void gpio_task_handler(void* arg){
-    uint32_t io_num;
-    while(1){
-        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)){
-            int level = gpio_get_level(io_num);
-            if (level == 0) {
-                print_temp = false;
-            } else {
-                print_temp = true;
-            }
-        }
-    }
-}
-
 // ADC potentiometer reading task
-static void adc_pot_task(void *pvParameters){
+static void adc_pot_term_task(void *pvParameters){
+    adc_ctx_t *ctx = (adc_ctx_t *) pvParameters;
+    adc_msg_t msg;
     while(1){
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, EXAMPLE_ADC1_CHAN0, &adc_raw[0]));
-        if (cali_pot) {
-            adc_cali_raw_to_voltage(cali_pot, adc_raw[0], &voltage[0]);
+        // Read potentiometer
+        ESP_ERROR_CHECK(adc_oneshot_read(ctx->adc1_handle, EXAMPLE_ADC1_CHAN0, &msg.raw_pot));
+        if (ctx->cali_pot) {
+            adc_cali_raw_to_voltage(ctx->cali_pot, msg.raw_pot, &msg.volt_pot);
         } else {
             ESP_LOGW(TAG, "Calibration handle not initialized");
             //No calibration, raw to voltage conversion
-            voltage[0] = (adc_raw[0] * VCC_MV) / 4095;
+            msg.volt_pot = (msg.raw_pot * VCC_MV) / ADC_MAX_RAW;
         }
 
+        // Read thermistor
+        ESP_ERROR_CHECK(adc_oneshot_read(ctx->adc1_handle, EXAMPLE_ADC1_CHAN1, &msg.raw_term));
+        if (ctx->cali_term) {
+            adc_cali_raw_to_voltage(ctx->cali_term, msg.raw_term, &msg.volt_term);
+        } else {
+            ESP_LOGW(TAG, "Calibration handle not initialized");
+            //No calibration, raw to voltage conversion
+            msg.volt_term = (msg.raw_term * VCC_MV) / ADC_MAX_RAW;
+        }
+
+        float v_therm_mv = (float)msg.volt_term;
+        // Avoid div by zero and out of range values
+        float v_over_vcc = v_therm_mv / VCC_MV;
+        if (v_over_vcc < 0.0001f) v_over_vcc = 0.0001f;
+        if (v_over_vcc > 0.9999f) v_over_vcc = 0.9999f;
+        // Calculate thermistor resistance (divisor: Vcc - R_fixed - R_therm - GND)
+        float r_therm = (R_FIXED_OHMS * v_therm_mv) / (VCC_MV - v_therm_mv);
+        // Beta equation to get temperature in Kelvin and Celsius
+        float temp_k = 1.0f / ( (1.0f / T0_K) + (1.0f / BETA_CONST) * logf(r_therm / R0_OHMS) );
+        msg.temp_c = temp_k - 273.15f;
+
         // Set led brightness according to measured voltage
-        int raw_val = adc_raw[0];
+        int raw_val = msg.raw_pot;
         if (raw_val < RAW_MIN) raw_val = RAW_MIN;
         if (raw_val > RAW_MAX) raw_val = RAW_MAX;
 
         // linear mapping with rounding
-        led_brightness = (uint8_t)(((raw_val - RAW_MIN) * 255 + ((RAW_MAX - RAW_MIN) / 2)) / (RAW_MAX - RAW_MIN));
-        float temp = read_temperature();
-        led_temp_control(temp);
+        msg.brightness = (uint8_t)(((raw_val - RAW_MIN) * 255 + ((RAW_MAX - RAW_MIN) / 2)) / (RAW_MAX - RAW_MIN));
 
+        if (adc_queue){
+            xQueueOverwrite(adc_queue, &msg);
+        }
         vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+static void controller_task(void *pvParameters){
+
+    LED_RGB_t *led = (LED_RGB_t *) pvParameters;
+    
+    threshold_t thr_r = { THR_RED_MIN_V, THR_RED_MAX_V };
+    threshold_t thr_g = { THR_GREEN_MIN_V, THR_GREEN_MAX_V };
+    threshold_t thr_b = { THR_BLUE_MIN_V, THR_BLUE_MAX_V };
+
+    adc_msg_t adcmsg;
+    thr_msg_t thrmsg;
+    uint32_t gpio_evt;
+
+    bool print_temp_local = true;
+
+
+    for(;;){
+        if (adc_queue && xQueuePeek(adc_queue, &adcmsg, pdMS_TO_TICKS(50))==pdPASS){
+            // Decide LED color based on temperature and thresholds
+            uint8_t r = 0, g = 0, b = 0;
+            if (adcmsg.temp_c >= thr_r.min && adcmsg.temp_c <= thr_r.max) r = adcmsg.brightness;
+            if (adcmsg.temp_c >= thr_g.min && adcmsg.temp_c <= thr_g.max) g = adcmsg.brightness;
+            if (adcmsg.temp_c >= thr_b.min && adcmsg.temp_c <= thr_b.max) b = adcmsg.brightness;
+            set_LED_RGB_color(led, r, g, b);
+        }
+
+        // Check for threshold updates from UART
+        if (thr_queue && xQueueReceive(thr_queue, &thrmsg, 0)==pdPASS){
+            switch (thrmsg.color){
+                case COLOR_R:
+                    thr_r.min = thrmsg.min_v;
+                    thr_r.max = thrmsg.max_v;
+                    break;
+                case COLOR_G:
+                    thr_g.min = thrmsg.min_v;
+                    thr_g.max = thrmsg.max_v;
+                    break;
+                case COLOR_B:
+                    thr_b.min = thrmsg.min_v;
+                    thr_b.max = thrmsg.max_v;
+                    break;
+                default:
+                    break;
+            }
+            // Notify the controller task about the updated thresholds
+            char response[64];
+            const char *cname = (thrmsg.color == COLOR_R) ? "R" : (thrmsg.color == COLOR_G) ? "G" : "B";
+            snprintf(response, sizeof(response), "Thresholds updated for %s: %.1f - %.1f\r\n", cname, thrmsg.min_v, thrmsg.max_v);
+            if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                uart_write_bytes(EX_UART_NUM, response, strlen(response));
+                xSemaphoreGive(uart_mux);
+            }
+        }
+
+        // Check for GPIO events
+        if (gpio_evt_queue && xQueueReceive(gpio_evt_queue, &gpio_evt, 0)==pdPASS){
+            int level = gpio_get_level((gpio_num_t)gpio_evt);
+            bool new_print_state = (level != 0);
+            if (new_print_state != print_temp_local){
+                print_temp_local = new_print_state;
+                
+                if (uart_ctrl_queue) {
+                    xQueueOverwrite(uart_ctrl_queue, &print_temp_local);
+                }
+            
+                // Notify UART task about print_temperature change
+                char bresponse[64];
+                snprintf(bresponse, sizeof(bresponse), "Print temperature %s\r\n", print_temp_local ? "ENABLED" : "DISABLED");
+                if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                    uart_write_bytes(EX_UART_NUM, bresponse, strlen(bresponse));
+                    xSemaphoreGive(uart_mux);
+                }
+            }
+        }   
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
 // UART task to write temperature periodically
 static void write_temp_uart_task(void *pvParameters){
-    while(1){
-        float temp = read_temperature();
-        led_temp_control(temp);
-        if(print_temp){
-            char temp_str[50];
-            snprintf(temp_str, sizeof(temp_str), "Temperature: %.2f °C\r\n", temp);
-            uart_write_bytes(EX_UART_NUM, temp_str, strlen(temp_str));
+    adc_msg_t latest;
+    bool print_temp_local = true;
+
+    for(;;){
+        // sleep 1 second -> this imposes the 1 Hz print rate
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        if (uart_ctrl_queue){
+            bool tmp;
+            if (xQueueReceive(uart_ctrl_queue, &tmp, 0) == pdPASS){
+                print_temp_local = tmp;
+            }
+        } // if printing disabled, skip
+        if (!print_temp_local) {
+            continue;
         }
-        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        // Peek the latest ADC message (does not remove it)
+        if (adc_queue && xQueuePeek(adc_queue, &latest, 0) == pdPASS) {
+            char temp_str[80];
+            snprintf(temp_str, sizeof(temp_str), "Temperature: %.2f C\r\n", latest.temp_c);
+            if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                uart_write_bytes(EX_UART_NUM, temp_str, strlen(temp_str));
+                xSemaphoreGive(uart_mux);
+            }
+        } else {
+            // No ADC data yet — optionally notify or skip
+            // (we skip to avoid spamming)
+        }
     }
 }
 // Command format to set thresholds: THR <R/G/B> <min> <max>
@@ -175,67 +269,108 @@ static void uart_event_task(void *pvParameters)
         //Waiting for UART event.
         if (xQueueReceive(uart0_queue, (void *)&event, portMAX_DELAY)) {
             if (event.type == UART_DATA) {
-                int len =uart_read_bytes(EX_UART_NUM, data, event.size, portMAX_DELAY);
+                int len = uart_read_bytes(EX_UART_NUM, data, sizeof(data)-1, pdMS_TO_TICKS(200));
+                if (len <= 0) continue;
                 data[len] = '\0';
                 if (strncmp((char *)data, "THR", 3) == 0) {
                     char color;
                     float min, max;
                     if (sscanf((char *)data, "THR %c %f %f", &color, &min, &max) == 3) {
+                        thr_msg_t thrmsg;
                         switch (color) {
                             case 'R':
-                                thr_red.min = min;
-                                thr_red.max = max;
+                                thrmsg.color = COLOR_R;
                                 break;
                             case 'G':
-                                thr_green.min = min;
-                                thr_green.max = max;
+                                thrmsg.color = COLOR_G;
                                 break;
                             case 'B':
-                                thr_blue.min = min;
-                                thr_blue.max = max;
+                                thrmsg.color = COLOR_B;
                                 break;
                             default:
-                                break;
+                                uart_write_bytes(EX_UART_NUM, "Invalid color. Use R, G, or B.\r\n", 34);
+                                continue;
+                        }
+                        thrmsg.min_v = min;
+                        thrmsg.max_v = max;
+                        if (thr_queue) {
+                            xQueueSend(thr_queue, &thrmsg, portMAX_DELAY);
+                        }
+                    } else {
+                        if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                            uart_write_bytes(EX_UART_NUM, "Invalid command format. Use: THR <R/G/B> <min> <max>\r\n", 61);
+                            xSemaphoreGive(uart_mux);
+                        }
                     }
-                    char response[64];
-                    snprintf(response, sizeof(response), "Thresholds updated for %c: %.1f - %.1f\r\n", color, min, max);
-                    uart_write_bytes(EX_UART_NUM, response, strlen(response));
+
                 }
             }        
         }
     }
 
 }
-}
 
 void app_main(void)
 {
-    // Configure Led RGB
-    my_led = configure_LED_RGB(GPIO_LED_R, GPIO_LED_G, GPIO_LED_B,
-                                         LED_CHANNEL_R, LED_CHANNEL_G, LED_CHANNEL_B,
-                                         LED_TIMER, LED_DUTY_RES_BITS, LED_FREQ_HZ);
-    // Start with leds off
-    set_LED_RGB_color(&my_led, 0, 0, 0);
+    // Create queues
+    adc_queue = xQueueCreate(1, sizeof(adc_msg_t));      
+    thr_queue = xQueueCreate(5, sizeof(thr_msg_t));        
+    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    uart_ctrl_queue = xQueueCreate(1, sizeof(bool));
+
+    if (!adc_queue || !thr_queue || !gpio_evt_queue || !uart_ctrl_queue) {
+        ESP_LOGE(TAG, "Error creando colas");
+        // manejar error (por simplicidad aquí hacemos un return)
+        return;
+    }
+
+    // Create UART mutex
+    uart_mux = xSemaphoreCreateMutex();
+    if (uart_mux == NULL) {
+        ESP_LOGE(TAG, "Error creating UART mutex");
+        return;
+    }
+
+    LED_RGB_t *my_led = malloc(sizeof(LED_RGB_t));
+    if (my_led == NULL) {
+        ESP_LOGE(TAG, "Error allocating memory for LED_RGB_t");
+        return;
+    }
+
+    // Initialize RGB LED
+    *my_led = configure_LED_RGB(GPIO_LED_R, GPIO_LED_G, GPIO_LED_B,
+                                 LED_CHANNEL_R, LED_CHANNEL_G, LED_CHANNEL_B,
+                                 LED_TIMER, LED_DUTY_RES_BITS, LED_FREQ_HZ);
+    // Set initial color to off
+    set_LED_RGB_color(my_led, 0, 0, 0);
+
+    // ADC context
+    adc_ctx_t *adc_ctx = malloc(sizeof(adc_ctx_t));
+    if (adc_ctx == NULL) {
+        ESP_LOGE(TAG, "Error allocating memory for ADC context");
+        return;
+    }
+    memset(adc_ctx, 0, sizeof(adc_ctx_t));
 
     //-------------ADC1 Init---------------//
 
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
     };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc_ctx->adc1_handle));
 
     //-------------ADC1 Config---------------//
     adc_oneshot_chan_cfg_t config = {
         .atten = EXAMPLE_ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, EXAMPLE_ADC1_CHAN0, &config));
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, EXAMPLE_ADC1_CHAN1, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_ctx->adc1_handle, EXAMPLE_ADC1_CHAN0, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_ctx->adc1_handle, EXAMPLE_ADC1_CHAN1, &config));
 
     //-------------ADC1 Calibration Init---------------//
     
-    example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN0, EXAMPLE_ADC_ATTEN, &cali_pot);
-    example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN1, EXAMPLE_ADC_ATTEN, &cali_term);
+    example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN0, EXAMPLE_ADC_ATTEN, &adc_ctx->cali_pot);
+    example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN1, EXAMPLE_ADC_ATTEN, &adc_ctx->cali_term);
 
     //----------UART config----------//
     uart_config_t uart_config = {
@@ -261,16 +396,16 @@ void app_main(void)
     };
     gpio_config(&io_conf);
 
-    //Create a queue to handle gpio event from isr
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    //Install GPIO ISR service
     gpio_install_isr_service(0);
     gpio_isr_handler_add(GPIO_BUTTON, gpio_isr_handler, (void*) GPIO_BUTTON);
 
     //Create tasks
-    xTaskCreate(adc_pot_task, "adc_pot_task", 2048, NULL, 10, NULL);
+    xTaskCreate(adc_pot_term_task, "adc_pot_term_task", 2048, adc_ctx, 10, NULL);
     xTaskCreate(write_temp_uart_task, "write_temp_uart_task", 4096, NULL, 11, NULL);
-    xTaskCreate(gpio_task_handler, "gpio_task_handler", 2048, NULL, 10, NULL);
     xTaskCreate(uart_event_task, "uart_event_task", 4096, NULL, 12, NULL);
+    xTaskCreate(controller_task, "controller_task", 4096, my_led, 13, NULL);
+
 }
 
 static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
