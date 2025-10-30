@@ -87,7 +87,8 @@ typedef struct {
 
 static QueueHandle_t adc_queue = NULL;
 static QueueHandle_t thr_queue = NULL;
-static QueueHandle_t uart_ctrl_queue = NULL;
+static QueueHandle_t uart_ctrl_queue = NULL;   // used previously to toggle printing
+static QueueHandle_t uart_rate_queue = NULL;   // new: used to set rate (ms)
 
 static SemaphoreHandle_t uart_mux = NULL;
 
@@ -162,10 +163,12 @@ static void controller_task(void *pvParameters){
     uint32_t gpio_evt;
 
     bool print_temp_local = true;
+    bool led_forced_off = false;
 
 
     for(;;){
-        if (adc_queue && xQueuePeek(adc_queue, &adcmsg, pdMS_TO_TICKS(50))==pdPASS){
+        // If LED not forced off, peek ADC message to update LED color
+        if (!led_forced_off && adc_queue && xQueuePeek(adc_queue, &adcmsg, pdMS_TO_TICKS(50))==pdPASS){
             // Decide LED color based on temperature and thresholds
             uint8_t r = 0, g = 0, b = 0;
             if (adcmsg.temp_c >= thr_r.min && adcmsg.temp_c <= thr_r.max) r = adcmsg.brightness;
@@ -202,26 +205,51 @@ static void controller_task(void *pvParameters){
             }
         }
 
-        // Check for GPIO events
-        if (gpio_evt_queue && xQueueReceive(gpio_evt_queue, &gpio_evt, 0)==pdPASS){
-            int level = gpio_get_level((gpio_num_t)gpio_evt);
-            bool new_print_state = (level != 0);
-            if (new_print_state != print_temp_local){
-                print_temp_local = new_print_state;
-                
-                if (uart_ctrl_queue) {
-                    xQueueOverwrite(uart_ctrl_queue, &print_temp_local);
-                }
-            
-                // Notify UART task about print_temperature change
-                char bresponse[64];
-                snprintf(bresponse, sizeof(bresponse), "Print temperature %s\r\n", print_temp_local ? "ENABLED" : "DISABLED");
-                if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(1000)) == pdTRUE) {
-                    uart_write_bytes(EX_UART_NUM, bresponse, strlen(bresponse));
-                    xSemaphoreGive(uart_mux);
+        // GPIO button event handling
+        if (gpio_evt_queue && xQueueReceive(gpio_evt_queue, &gpio_evt, 0) == pdPASS) {
+            if ((uint32_t)gpio_evt == (uint32_t)GPIO_BUTTON) {
+                // Read button level with debounce
+                int level1 = gpio_get_level((gpio_num_t)GPIO_BUTTON);
+                vTaskDelay(pdMS_TO_TICKS(30)); // debounce
+                int level2 = gpio_get_level((gpio_num_t)GPIO_BUTTON);
+                if (level1 == level2) {
+                    
+                    if (level2 == 0) {
+                        // Toggle forced-off state
+                        led_forced_off = !led_forced_off;
+                        if (led_forced_off) {
+                            // Force LED off
+                            set_LED_RGB_color(led, 0, 0, 0);
+                        } else {
+                            // Restore with last ADC if available
+                            adc_msg_t adc_local;
+                            if (adc_queue && xQueuePeek(adc_queue, &adc_local, 0) == pdPASS) {
+                                uint8_t rr = 0, gg = 0, bb = 0;
+                                if (adc_local.temp_c >= thr_r.min && adc_local.temp_c <= thr_r.max) rr = adc_local.brightness;
+                                if (adc_local.temp_c >= thr_g.min && adc_local.temp_c <= thr_g.max) gg = adc_local.brightness;
+                                if (adc_local.temp_c >= thr_b.min && adc_local.temp_c <= thr_b.max) bb = adc_local.brightness;
+                                set_LED_RGB_color(led, rr, gg, bb);
+                            }
+                        }
+
+                        // Mensaje UART indicando nuevo estado
+                        if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                            const char *msg = led_forced_off ? "TURNING LED OFF\r\n" : "TURNING LED ON\r\n";
+                            uart_write_bytes(EX_UART_NUM, msg, strlen(msg));
+                            xSemaphoreGive(uart_mux);
+                        }
+
+                        // Esperar hasta que se libere el botón (evita múltiples toggles por rebote)
+                        while (gpio_get_level((gpio_num_t)GPIO_BUTTON) == 0) {
+                            vTaskDelay(pdMS_TO_TICKS(20));
+                        }
+                        // pequeña pausa tras la liberación
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                    }
                 }
             }
-        }   
+        }
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -230,10 +258,21 @@ static void controller_task(void *pvParameters){
 static void write_temp_uart_task(void *pvParameters){
     adc_msg_t latest;
     bool print_temp_local = true;
+    uint32_t period_ms = 1000; // default 1s
 
     for(;;){
-        // sleep 1 second -> this imposes the 1 Hz print rate
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Check if there's a new rate command (non-blocking)
+        if (uart_rate_queue) {
+            uint32_t new_period;
+            if (xQueueReceive(uart_rate_queue, &new_period, 0) == pdPASS) {
+                if (new_period < 10) new_period = 10; // clamp a minimum (10 ms)
+                period_ms = new_period;
+                // optionally report? we prefer uart_event_task to confirm
+            }
+        }
+
+        // sleep -> uses the possibly-updated period
+        vTaskDelay(pdMS_TO_TICKS(period_ms));
 
         if (uart_ctrl_queue){
             bool tmp;
@@ -259,11 +298,14 @@ static void write_temp_uart_task(void *pvParameters){
         }
     }
 }
-// Command format to set thresholds: THR <R/G/B> <min> <max>
+// Command formats
+// Thresholds: THR <R/G/B> <min> <max>
+// Time printing: RATE <ms>
+// Read Potentiometer voltage: READ POT
 static void uart_event_task(void *pvParameters)
 {
     uart_event_t event;
-    uint8_t data[64];
+    uint8_t data[128];
 
     for (;;) {
         //Waiting for UART event.
@@ -272,6 +314,14 @@ static void uart_event_task(void *pvParameters)
                 int len = uart_read_bytes(EX_UART_NUM, data, sizeof(data)-1, pdMS_TO_TICKS(200));
                 if (len <= 0) continue;
                 data[len] = '\0';
+
+                // Trim trailing CR/LF
+                while (len > 0 && (data[len-1] == '\r' || data[len-1] == '\n')) {
+                    data[len-1] = '\0';
+                    len--;
+                }
+
+                // --- THR command (existing) ---
                 if (strncmp((char *)data, "THR", 3) == 0) {
                     char color;
                     float min, max;
@@ -288,7 +338,10 @@ static void uart_event_task(void *pvParameters)
                                 thrmsg.color = COLOR_B;
                                 break;
                             default:
-                                uart_write_bytes(EX_UART_NUM, "Invalid color. Use R, G, or B.\r\n", 34);
+                                if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                                    uart_write_bytes(EX_UART_NUM, "Invalid color. Use R, G, or B.\r\n", 34);
+                                    xSemaphoreGive(uart_mux);
+                                }
                                 continue;
                         }
                         thrmsg.min_v = min;
@@ -302,8 +355,57 @@ static void uart_event_task(void *pvParameters)
                             xSemaphoreGive(uart_mux);
                         }
                     }
-
+                    continue;
                 }
+
+                // --- RATE command (new) ---
+                if (strncmp((char *)data, "RATE", 4) == 0) {
+                    uint32_t ms;
+                    if (sscanf((char *)data, "RATE %" SCNu32, &ms) == 1) {
+                        if (ms < 10) ms = 10; // minimum clamp
+                        if (uart_rate_queue) {
+                            xQueueOverwrite(uart_rate_queue, &ms);
+                        }
+                        if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                            char resp[80];
+                            snprintf(resp, sizeof(resp), "Print rate set to %" PRIu32 " ms\r\n", ms);
+                            uart_write_bytes(EX_UART_NUM, resp, strlen(resp));
+                            xSemaphoreGive(uart_mux);
+                        }
+                    } else {
+                        if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                            uart_write_bytes(EX_UART_NUM, "Invalid RATE format. Use: RATE <ms>\r\n", 36);
+                            xSemaphoreGive(uart_mux);
+                        }
+                    }
+                    continue;
+                }
+
+                // --- READ POT (immediate) command (new) ---
+                if (strncmp((char *)data, "READ POT", 8) == 0 ) {
+                    adc_msg_t sample;
+                    if (adc_queue && xQueuePeek(adc_queue, &sample, 0) == pdPASS) {
+                        if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                            char resp[96];
+                            snprintf(resp, sizeof(resp), "POT raw: %d   volt: %d mV\r\n", sample.raw_pot, sample.volt_pot);
+                            uart_write_bytes(EX_UART_NUM, resp, strlen(resp));
+                            xSemaphoreGive(uart_mux);
+                        }
+                    } else {
+                        if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                            uart_write_bytes(EX_UART_NUM, "No pot data available yet\r\n", 27);
+                            xSemaphoreGive(uart_mux);
+                        }
+                    }
+                    continue;
+                }
+
+                // If not matched, optionally echo or send help
+                if (xSemaphoreTake(uart_mux, pdMS_TO_TICKS(500)) == pdTRUE) {
+                    uart_write_bytes(EX_UART_NUM, "Unknown command. Supported: THR, RATE, READ POT, RPOT\r\n", 55);
+                    xSemaphoreGive(uart_mux);
+                }
+
             }        
         }
     }
@@ -317,10 +419,11 @@ void app_main(void)
     thr_queue = xQueueCreate(5, sizeof(thr_msg_t));        
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
     uart_ctrl_queue = xQueueCreate(1, sizeof(bool));
+    uart_rate_queue = xQueueCreate(1, sizeof(uint32_t)); 
 
-    if (!adc_queue || !thr_queue || !gpio_evt_queue || !uart_ctrl_queue) {
+    if (!adc_queue || !thr_queue || !gpio_evt_queue || !uart_ctrl_queue || !uart_rate_queue) {
         ESP_LOGE(TAG, "Error creando colas");
-        // manejar error (por simplicidad aquí hacemos un return)
+        // Error handling
         return;
     }
 
@@ -388,10 +491,10 @@ void app_main(void)
 
     //----------Button GPIO config----------//
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_ANYEDGE,   // Interrupt of rising edge and falling edge
+        .intr_type = GPIO_INTR_NEGEDGE,   // detectar sólo flanco de bajada (presionado)
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = GPIO_INPUT_PIN_SEL,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,   // sin pull-up interno (tienes pull-up externo)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
     gpio_config(&io_conf);
@@ -469,4 +572,3 @@ static void example_adc_calibration_deinit(adc_cali_handle_t handle)
     ESP_ERROR_CHECK(adc_cali_delete_scheme_line_fitting(handle));
 #endif
 }
-
