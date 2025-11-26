@@ -1,0 +1,100 @@
+body {
+    background-color: #d0c9a0;
+    font-family: HelveticaNeueRegular, HelveticaNeue-Regular, "Helvetica Neue Regular", HelveticaNeue, "Helvetica Neue", Helvetica, Arial;
+    color: #0272B7;
+}
+
+h1 {
+    display: block;
+    text-align: center;
+    margin: 0;
+    padding: 10px;
+    font-size: 1.7em;
+    color: #1d3557;
+}
+
+h2 {
+    font-size: 1.4em;
+    color: #1d3557;
+}
+
+h3 {
+    font-size: 1.2em;
+    color: #1d3557;
+}
+
+h4 {
+    font-size: 1em;
+    color: #1d3557;
+}
+
+.gr {
+    color: green;
+}
+.rd {
+    color: red;
+}
+
+#latest_firmware, #latest_firmware_label {
+    display:inline;
+}
+#latest_firmware {
+    color: #1d3557;
+}
+
+#temperature_reading {
+    display:inline;
+    color: #1d3557;
+}
+
+/* Clase específica para la lectura de la hora */
+#current_time_reading {
+    display: inline;
+    color: #1d3557;
+}
+
+/* --- SE ELIMINA LA DEFINICION DE HUMIDITY_READING --- */
+
+/* Clase específica para el botón Rojo */
+#toggle_red_led {
+    background-color: RGBA(255, 0, 0, 0.5); /* Rojo semi-transparente */
+}
+/* Clase específica para el botón Verde */
+#toggle_green_led {
+    background-color: RGBA(0, 255, 0, 0.5); /* Verde semi-transparente */
+}
+/* Clase específica para el botón Azul */
+#toggle_blue_led {
+    background-color: RGBA(0, 0, 255, 0.5); /* Azul semi-transparente */
+}
+
+.buttons {
+    padding: 5px;
+}
+
+input[type="button"] {
+    font-size: 12px;
+    border: 0;
+    line-height: 2;
+    padding: 0 5px;
+    text-align: center;
+    color: #ffffff;
+    text-shadow: 1px 1px 1px #000;
+    border-radius: 10px;
+    background-color: RGBA(106,125,144,0.35);
+    background-image: linear-gradient(to top left,
+                                      rgba(0, 0, 0, .2),
+                                      rgba(0, 0, 0, .2) 30%,
+                                      rgba(0, 0, 0, 0));
+    box-shadow: inset 2px 2px 3px rgba(255, 255, 255, .6),
+                inset -2px -2px 3px rgba(0, 0, 0, .6);
+}
+
+input[type="button"]:hover {
+    background-color: RGBA(112,164,222,0.68);
+}
+
+input[type="button"]:active {
+    box-shadow: inset -2px -2px 3px rgba(255, 255, 255, .6),
+                inset 2px 2px 3px rgba(0, 0, 0, .6);
+}

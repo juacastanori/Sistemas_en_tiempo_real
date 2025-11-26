@@ -5,7 +5,6 @@
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
-  "idf.portWin": "COM3",
   "idf.toolsPathWin": "c:\\Users\\jeron\\.espressiftools",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32c3"
@@ -16,10 +15,10 @@
     "--query-driver=c:\\Users\\jeron\\.espressiftools\\tools\\riscv32-esp-elf\\esp-14.2.0_20241119\\riscv32-esp-elf\\bin\\riscv32-esp-elf-gcc.exe",
     "--compile-commands-dir=${workspaceFolder}\\build"
   ],
+  "idf.portWin": "COM3",
   "idf.flashType": "UART",
   "files.associations": {
-    "chrono": "c",
-    "random": "c",
-    "limits": "c"
+    "thermistor_reader.h": "c",
+    "adc_cali_scheme.h": "c"
   }
 }
