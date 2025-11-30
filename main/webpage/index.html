@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Control Ventilación - ESP32 C6</title>
+    <link rel="stylesheet" href="app.css">
+    <link rel="icon" href="favicon.ico">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="header-title">Control del Sistema de Ventilación</h1>
+                <p class="header-subtitle">ESP32 C6 - Monitoreo en Tiempo Real</p>
+                <p class="header-time" id="headerTime">Cargando hora...</p>
+            </div>
+            <div class="header-status">
+                <span class="status-indicator" id="connectionStatus"></span>
+                <span id="connectionText">Conectando...</span>
+            </div>
+        </header>
+
+        <!-- Main Grid -->
+        <main class="main-grid">
+            <!-- Left Panel: Estado del Sistema -->
+            <section class="panel left-panel">
+                <h2 class="panel-title">
+                    <span class="icon">📊</span> Estado del Sistema
+                </h2>
+                <div class="status-cards">
+                    <!-- Card: Temperatura -->
+                    <div class="status-card temperature-card">
+                        <div class="card-header">
+                            <span class="card-icon">🌡️</span>
+                            <span class="card-label">Temperatura</span>
+                        </div>
+                        <div class="card-value">
+                            <span id="currentTemp" class="temp-value">--</span>
+                            <span class="temp-unit">°C</span>
+                        </div>
+                        <div class="card-trend" id="tempTrend"></div>
+                    </div>
+
+                    <!-- Card: PIR -->
+                    <div class="status-card pir-card">
+                        <div class="card-header">
+                            <span class="card-icon">🚨</span>
+                            <span class="card-label">Sensor PIR</span>
+                        </div>
+                        <div class="card-value">
+                            <span id="pirStatus" class="pir-value">NO DETECTADO</span>
+                        </div>
+                        <div class="pir-indicator" id="pirIndicator"></div>
+                    </div>
+
+                    <!-- Card: Modo Actual -->
+                    <div class="status-card mode-card">
+                        <div class="card-header">
+                            <span class="card-icon">⚙️</span>
+                            <span class="card-label">Modo Actual</span>
+                        </div>
+                        <div class="card-value">
+                            <span id="currentMode" class="mode-value">MANUAL</span>
+                        </div>
+                    </div>
+
+                    <!-- Card: PWM Actual -->
+                    <div class="status-card pwm-card">
+                        <div class="card-header">
+                            <span class="card-icon">⚡</span>
+                            <span class="card-label">PWM Actual</span>
+                        </div>
+                        <div class="card-value">
+                            <span id="currentPWM" class="pwm-value">0</span>
+                            <span class="pwm-unit">%</span>
+                        </div>
+                        <div class="pwm-bar">
+                            <div class="pwm-fill" id="pwmFill"></div>
+                        </div>
+                    </div>
+
+                    <!-- Card: Registro Activo (modo programado) -->
+                    <div class="status-card register-card" id="registerCardContainer" style="display: none;">
+                        <div class="card-header">
+                            <span class="card-icon">📋</span>
+                            <span class="card-label">Registro Activo</span>
+                        </div>
+                        <div class="card-value">
+                            <span id="activeRegister" class="register-value">Ninguno</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Auto-refresh indicator -->
+                <div class="refresh-indicator">
+                    <span class="refresh-dot" id="refreshDot"></span>
+                    <span class="refresh-text">Actualización automática cada 2 segundos</span>
+                </div>
+            </section>
+
+            <!-- Right Panel: Configuración -->
+            <section class="panel right-panel">
+                <h2 class="panel-title">
+                    <span class="icon">🔧</span> Configuración
+                </h2>
+
+                <!-- Mode Selector -->
+                <div class="config-section">
+                    <h3 class="section-title">Seleccionar Modo</h3>
+                    <div class="mode-buttons">
+                        <button class="mode-btn active" data-mode="0" id="btnModeManual">
+                            <span class="mode-btn-icon">✋</span>
+                            Manual
+                        </button>
+                        <button class="mode-btn" data-mode="1" id="btnModeAuto">
+                            <span class="mode-btn-icon">🤖</span>
+                            Automático
+                        </button>
+                        <button class="mode-btn" data-mode="2" id="btnModeProgrammed">
+                            <span class="mode-btn-icon">📅</span>
+                            Programado
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mode-specific Configuration -->
+                <div class="config-modes">
+                    <!-- MANUAL MODE CONFIG -->
+                    <div class="mode-config active" id="modeConfigManual" data-mode="0">
+                        <h3 class="section-title">Configuración Manual</h3>
+                        <p class="section-description">Ajusta el PWM manualmente entre 0% y 100%</p>
+                        
+                        <div class="control-group">
+                            <label for="manualPWMSlider">PWM del Ventilador</label>
+                            <div class="slider-container">
+                                <input type="range" id="manualPWMSlider" class="slider" min="0" max="100" value="0">
+                                <div class="slider-labels">
+                                    <span>0%</span>
+                                    <span>50%</span>
+                                    <span>100%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="manualPWMInput">Valor PWM (0-100)</label>
+                            <div class="input-group">
+                                <input type="number" id="manualPWMInput" class="input-field" min="0" max="100" value="0">
+                                <span class="input-unit">%</span>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary btn-large" id="btnSaveManual">
+                            <span class="btn-icon">💾</span> Guardar Configuración Manual
+                        </button>
+                        <div class="feedback-message" id="feedbackManual"></div>
+                    </div>
+
+                    <!-- AUTOMATIC MODE CONFIG -->
+                    <div class="mode-config" id="modeConfigAuto" data-mode="1">
+                        <h3 class="section-title">Configuración Automática</h3>
+                        <p class="section-description">Define rango de temperatura para control automático</p>
+                        
+                        <div class="control-group">
+                            <label for="autoTMin">Temperatura Mínima (T_min)</label>
+                            <div class="input-group">
+                                <input type="number" id="autoTMin" class="input-field" min="-20" max="100" value="20" step="0.5">
+                                <span class="input-unit">°C</span>
+                            </div>
+                            <small class="help-text">PWM = 0% cuando Temp ≤ T_min</small>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="autoTMax">Temperatura Máxima (T_max)</label>
+                            <div class="input-group">
+                                <input type="number" id="autoTMax" class="input-field" min="-20" max="100" value="30" step="0.5">
+                                <span class="input-unit">°C</span>
+                            </div>
+                            <small class="help-text">PWM = 100% cuando Temp ≥ T_max</small>
+                        </div>
+
+                        <div class="temp-range-preview">
+                            <div class="range-bar">
+                                <div class="range-min-marker" id="rangeMinMarker"></div>
+                                <div class="range-max-marker" id="rangeMaxMarker"></div>
+                            </div>
+                            <div class="range-labels">
+                                <span id="rangeMinText">20°C</span>
+                                <span id="rangeMaxText">30°C</span>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary btn-large" id="btnSaveAuto">
+                            <span class="btn-icon">💾</span> Guardar Configuración Automática
+                        </button>
+                        <div class="feedback-message" id="feedbackAuto"></div>
+                    </div>
+
+                    <!-- PROGRAMMED MODE CONFIG -->
+                    <div class="mode-config" id="modeConfigProgrammed" data-mode="2">
+                        <h3 class="section-title">Configuración Programada</h3>
+                        <p class="section-description">Define hasta 3 registros con intervalos de tiempo</p>
+                        
+                        <div id="registersContainer">
+                            <!-- Registers will be dynamically added here -->
+                        </div>
+
+                        <button class="btn btn-primary btn-large" id="btnSaveProgrammed">
+                            <span class="btn-icon">💾</span> Guardar Configuración Programada
+                        </button>
+                        <div class="feedback-message" id="feedbackProgrammed"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bottom Panel: OTA Update -->
+            <section class="panel bottom-panel">
+                <h2 class="panel-title">
+                    <span class="icon">🔄</span> Actualización OTA
+                </h2>
+                <p class="section-description">Actualiza el firmware del ESP32 C6</p>
+                
+                <div class="ota-container">
+                    <div class="file-upload-group">
+                        <label for="firmwareFile" class="file-label">
+                            <span class="file-icon">📁</span>
+                            <span class="file-text" id="fileText">Seleccionar archivo (.bin)</span>
+                        </label>
+                        <input type="file" id="firmwareFile" class="file-input" accept=".bin">
+                    </div>
+
+                    <button class="btn btn-success btn-large" id="btnSendFirmware" disabled>
+                        <span class="btn-icon">⬆️</span> Enviar Firmware OTA
+                    </button>
+
+                    <div class="ota-progress" id="otaProgress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progressPercent">0%</span>
+                            <span id="progressSize"></span>
+                        </div>
+                    </div>
+
+                    <div class="feedback-message" id="feedbackOTA"></div>
+
+                    <div class="ota-info">
+                        <p><strong>⚠️ Importante:</strong></p>
+                        <ul>
+                            <li>El archivo debe ser un binario (.bin) compilado para ESP32 C6</li>
+                            <li>No desconectes la alimentación durante la actualización</li>
+                            <li>El dispositivo se reiniciará automáticamente después de la actualización</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2025 Sistema de Control de Ventilación | ESP32 C6 | Universidad Nacional de Colombia</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
