@@ -8,7 +8,6 @@
 #include "lwip/netdb.h"
 
 #include "http_server.h"
-#include "rgb_led.h"
 #include "tasks_common.h"
 #include "wifi_app.h"
 #include "sntp_time_sync.h"
@@ -156,18 +155,18 @@ static void wifi_app_soft_ap_config(void)
     esp_netif_ip_info_t ap_ip_info;
     memset(&ap_ip_info, 0x00, sizeof(ap_ip_info));
 
-    esp_netif_dhcps_stop(esp_netif_ap); 		    ///> must call this first
-    inet_pton(AF_INET, WIFI_AP_IP, &ap_ip_info.ip);  ///> Assign access point's static IP, GW, and netmask
+    esp_netif_dhcps_stop(esp_netif_ap);             /// > must call this first
+    inet_pton(AF_INET, WIFI_AP_IP, &ap_ip_info.ip);   /// > Assign access point's static IP, GW, and netmask
     inet_pton(AF_INET, WIFI_AP_GATEWAY, &ap_ip_info.gw);
     inet_pton(AF_INET, WIFI_AP_NETMASK, &ap_ip_info.netmask);
-    ESP_ERROR_CHECK(esp_netif_set_ip_info(esp_netif_ap, &ap_ip_info)); 		   ///> Statically configure the network interface
-    ESP_ERROR_CHECK(esp_netif_dhcps_start(esp_netif_ap)); 		   ///> Start the AP DHCP server (for connecting stations e.g. your mobile device)
+    ESP_ERROR_CHECK(esp_netif_set_ip_info(esp_netif_ap, &ap_ip_info));         /// > Statically configure the network interface
+    ESP_ERROR_CHECK(esp_netif_dhcps_start(esp_netif_ap));          /// > Start the AP DHCP server (for connecting stations e.g. your mobile device)
 
     // Set the mode before config
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA)); 		   ///> Setting the mode as Access Point / Station Mode
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config)); 		   ///> Set our configuration
-    ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_AP_BANDWIDTH)); 	   ///> Our default bandwidth 20 MHz
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_STA_POWER_SAVE)); 		   ///> Power save set to "NONE"
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));           /// > Setting the mode as Access Point / Station Mode
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));          /// > Set our configuration
+    ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_AP_BANDWIDTH));        /// > Our default bandwidth 20 MHz
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_STA_POWER_SAVE));         /// > Power save set to "NONE"
 }
 
 /**
@@ -187,9 +186,6 @@ static void wifi_app_sta_config(void)
     
     // Establecer la configuración STA
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &sta_config));
-    
-    // *** CORRECCIÓN: NO llamar a wifi_app_connect_sta() aquí. Se llama después de esp_wifi_start() en wifi_app_task.
-    // wifi_app_connect_sta(); 
 }
 
 /**
@@ -237,8 +233,6 @@ static void wifi_app_task(void *pvParameters)
                     ESP_LOGI(TAG, "WIFI_APP_MSG_START_HTTP_SERVER");
 
                     http_server_start();
-                    //rgb_led_http_server_started();
-
                     break;
 
                 case WIFI_APP_MSG_CONNECTING_FROM_HTTP_SERVER:
@@ -248,13 +242,11 @@ static void wifi_app_task(void *pvParameters)
 
                 case WIFI_APP_MSG_STA_CONNECTED_GOT_IP:
                     ESP_LOGI(TAG, "WIFI_APP_MSG_STA_CONNECTED_GOT_IP");
-                    
-                    //rgb_led_wifi_connected();
                     break;
                     
                 case WIFI_APP_MSG_STA_DISCONNECTED:
                     ESP_LOGI(TAG, "WIFI_APP_MSG_STA_DISCONNECTED. Fallo maximo de reintentos.");
-                    // Manejar desconexión permanente (ej: cambiar el led a un color de error)
+                    // Manejar desconexión permanente
                     break;
 
                 default:
@@ -282,9 +274,6 @@ BaseType_t wifi_app_send_message(wifi_app_message_e msgID)
 void wifi_app_start(void)
 {
     ESP_LOGI(TAG, "STARTING WIFI APPLICATION");
-
-    // Start WiFi started LED
-    //rgb_led_wifi_app_started();
 
     // Disable default WiFi logging messages
     esp_log_level_set("wifi", ESP_LOG_NONE);

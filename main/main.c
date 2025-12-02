@@ -6,18 +6,10 @@
 #include "driver/gpio.h"
 
 #include "wifi_app.h"
-#include "rgb_led.h"
 #include "http_server.h"
 #include "thermistor_reader.h"
-
-// Se elimina la referencia a BLINK_GPIO ya que el control es vía rgb_led
-// Se asume que rgb_led_pwm_init() configura los GPIOs necesarios para PWM.
-static void configure_led(void)
-{
-    // gpio_reset_pin(BLINK_GPIO); // Se elimina
-    // gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT); // Se elimina
-    rgb_led_pwm_init();
-}
+#include "pir_sensor.h"
+#include "fan_control.h"
 
 
 void app_main(void)
@@ -31,12 +23,11 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
     
-    // Configura el LED (solo llama a la inicialización PWM RGB)
-    configure_led();
+    // Initialize sensors and actuators
+    thermistor_init();  // Temperature sensor
+    pir_sensor_init();  // PIR motion sensor
+    fan_control_init(); // Fan PWM control
     
     // Start Wifi (se asume que llama a http_server_start internamente)
     wifi_app_start();
-
-    // Start thermistor reader (inicializa la cola y la tarea)
-    thermistor_init();
 }

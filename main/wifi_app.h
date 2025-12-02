@@ -22,8 +22,8 @@ typedef void (*wifi_connected_event_callback_t)(void);
 
 // === Configuración de la red Wi-Fi (Modo Station - STA) ===
 // NOTA: En una app real, estas credenciales deberían venir de la configuración NVS
-#define WIFI_STA_SSID                   "BLANCA"         // SSID de la red a la que conectarse
-#define WIFI_STA_PASSWORD               "24431016"     // Contraseña de la red
+#define WIFI_STA_SSID                   "Linda"         // SSID de la red a la que conectarse
+#define WIFI_STA_PASSWORD               "Hostallinda0409"     // Contraseña de la red
 #define WIFI_STA_POWER_SAVE             WIFI_PS_NONE            // No usar ahorro de energía
 
 #define MAX_SSID_LENGTH                 32                      // Estándar IEEE máximo

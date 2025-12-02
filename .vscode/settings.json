@@ -3,7 +3,7 @@
   "idf.espIdfPathWin": "c:\\Users\\jeron\\.espressifcon\\v5.5.1\\esp-idf",
   "idf.pythonInstallPath": "c:\\Users\\jeron\\.espressiftools\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
-    "board/esp32-wrover-kit-3.3v.cfg"
+    "board/esp32s3-builtin.cfg"
   ],
   "idf.toolsPathWin": "c:\\Users\\jeron\\.espressiftools",
   "idf.customExtraVars": {
@@ -13,7 +13,7 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=c:\\Users\\jeron\\.espressiftools\\tools\\riscv32-esp-elf\\esp-14.2.0_20241119\\riscv32-esp-elf\\bin\\riscv32-esp-elf-gcc.exe",
-    "--compile-commands-dir=${workspaceFolder}\\build"
+    "--compile-commands-dir=c:\\Users\\jeron\\Downloads\\Universidad\\2025-2\\Real_time_system\\project\\http_app\\build"
   ],
   "idf.portWin": "COM3",
   "idf.flashType": "UART",

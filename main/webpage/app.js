@@ -1,5 +1,5 @@
 /**
- * Sistema de Control de Ventilación - ESP32 C6
+ * Sistema de Control de Ventilación - ESP32
  * JavaScript moderno sin jQuery
  */
 
@@ -11,9 +11,9 @@ const CONFIG = {
         SAVE_MANUAL: '/saveManual',
         SAVE_AUTO: '/saveAuto',
         SAVE_PROGRAMMED: '/saveProgrammed',
+        GET_PROGRAMMED: '/getProgrammed',
         OTA_UPDATE: '/OTAupdate',
         OTA_STATUS: '/OTAstatus',
-        TEMP_SENSOR: '/dhtSensor.json',
         TIME: '/time.json'
     },
     UPDATE_INTERVAL: 2000,
@@ -37,7 +37,7 @@ const STATE = {
     currentTemp: null,
     pirDetected: false,
     activeRegister: null,
-    isConnected: true,
+    isConnected: false,
     updateTimer: null,
     refreshDotAnimation: false
 };
@@ -47,8 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Iniciando aplicación...');
     initializeEventListeners();
     initializeRegisterUI();
+    loadSavedRegisters();  // Cargar registros guardados
     startSystemUpdates();
     startTimeUpdates();
+    // Primera actualización inmediata
     updateSystemState();
 });
 
@@ -63,43 +65,50 @@ function initializeEventListeners() {
     const manualSlider = document.getElementById('manualPWMSlider');
     const manualInput = document.getElementById('manualPWMInput');
     
-    manualSlider.addEventListener('input', (e) => {
-        manualInput.value = e.target.value;
-        updateManualPWMDisplay();
-    });
+    if(manualSlider && manualInput) {
+        manualSlider.addEventListener('input', (e) => {
+            manualInput.value = e.target.value;
+            updateManualPWMDisplay();
+        });
 
-    manualInput.addEventListener('input', (e) => {
-        const value = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-        manualInput.value = value;
-        manualSlider.value = value;
-        updateManualPWMDisplay();
-    });
+        manualInput.addEventListener('input', (e) => {
+            const value = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+            manualInput.value = value;
+            manualSlider.value = value;
+            updateManualPWMDisplay();
+        });
+    }
 
-    document.getElementById('btnSaveManual').addEventListener('click', saveManualConfig);
+    const btnSaveManual = document.getElementById('btnSaveManual');
+    if(btnSaveManual) btnSaveManual.addEventListener('click', saveManualConfig);
 
     // Automatic mode
     const tMin = document.getElementById('autoTMin');
     const tMax = document.getElementById('autoTMax');
 
-    tMin.addEventListener('input', updateTempRangePreview);
-    tMax.addEventListener('input', updateTempRangePreview);
+    if(tMin) tMin.addEventListener('input', updateTempRangePreview);
+    if(tMax) tMax.addEventListener('input', updateTempRangePreview);
 
-    document.getElementById('btnSaveAuto').addEventListener('click', saveAutoConfig);
+    const btnSaveAuto = document.getElementById('btnSaveAuto');
+    if(btnSaveAuto) btnSaveAuto.addEventListener('click', saveAutoConfig);
 
     // Programmed mode
-    document.getElementById('btnSaveProgrammed').addEventListener('click', saveProgrammedConfig);
+    const btnSaveProgrammed = document.getElementById('btnSaveProgrammed');
+    if(btnSaveProgrammed) btnSaveProgrammed.addEventListener('click', saveProgrammedConfig);
 
     // OTA
     const fileInput = document.getElementById('firmwareFile');
-    fileInput.addEventListener('change', handleFileSelect);
-    document.getElementById('btnSendFirmware').addEventListener('click', sendFirmware);
+    if(fileInput) fileInput.addEventListener('change', handleFileSelect);
+    
+    const btnSendFirmware = document.getElementById('btnSendFirmware');
+    if(btnSendFirmware) btnSendFirmware.addEventListener('click', sendFirmware);
 }
 
 // ========== MODE MANAGEMENT ==========
 function handleModeChange(e) {
     const modeNum = parseInt(e.currentTarget.dataset.mode);
     
-    // Update button states
+    // Update button states visualmente
     document.querySelectorAll('.mode-btn').forEach(btn => {
         btn.classList.remove('active');
     });
@@ -109,9 +118,14 @@ function handleModeChange(e) {
     document.querySelectorAll('.mode-config').forEach(config => {
         config.classList.remove('active');
     });
-    document.getElementById(`modeConfigManual`).classList.toggle('active', modeNum === 0);
-    document.getElementById(`modeConfigAuto`).classList.toggle('active', modeNum === 1);
-    document.getElementById(`modeConfigProgrammed`).classList.toggle('active', modeNum === 2);
+    
+    const manualConfig = document.getElementById(`modeConfigManual`);
+    const autoConfig = document.getElementById(`modeConfigAuto`);
+    const progConfig = document.getElementById(`modeConfigProgrammed`);
+
+    if(manualConfig) manualConfig.classList.toggle('active', modeNum === 0);
+    if(autoConfig) autoConfig.classList.toggle('active', modeNum === 1);
+    if(progConfig) progConfig.classList.toggle('active', modeNum === 2);
 
     // Save mode to ESP32
     setSystemMode(modeNum);
@@ -131,21 +145,28 @@ async function setSystemMode(mode) {
 
         STATE.currentMode = mode;
         console.log(`Modo cambiado a: ${CONFIG.MODE_NAMES[mode]}`);
+        // Actualizar UI para reflejar el cambio confirmado
+        updateModeDisplay();
     } catch (error) {
-        console.warn('Error al cambiar modo (endpoint no disponible):', error);
-        // En producción, el endpoint debería estar disponible
+        console.warn('Error al cambiar modo:', error);
     }
 }
 
 // ========== MANUAL MODE ==========
 function updateManualPWMDisplay() {
-    const value = parseInt(document.getElementById('manualPWMSlider').value);
+    const slider = document.getElementById('manualPWMSlider');
     const pwmFill = document.getElementById('pwmFill');
-    pwmFill.style.width = value + '%';
+    if(slider && pwmFill) {
+        const value = parseInt(slider.value);
+        pwmFill.style.width = value + '%';
+    }
 }
 
 async function saveManualConfig() {
-    const pwm = parseInt(document.getElementById('manualPWMInput').value);
+    const input = document.getElementById('manualPWMInput');
+    if(!input) return;
+    
+    const pwm = parseInt(input.value);
 
     if (isNaN(pwm) || pwm < 0 || pwm > 100) {
         showFeedback('feedbackManual', 'PWM debe estar entre 0 y 100', 'error');
@@ -166,25 +187,36 @@ async function saveManualConfig() {
         showFeedback('feedbackManual', '✓ Configuración manual guardada correctamente', 'success');
         STATE.currentPWM = pwm;
     } catch (error) {
-        console.warn('Error al guardar configuración manual (endpoint no disponible):', error);
-        showFeedback('feedbackManual', '✓ Configuración guardada localmente (endpoint no disponible)', 'info');
-        STATE.currentPWM = pwm;
+        console.warn('Error al guardar configuración manual:', error);
+        showFeedback('feedbackManual', '⚠ Error de conexión', 'error');
     }
 }
 
 // ========== AUTOMATIC MODE ==========
 function updateTempRangePreview() {
-    const tMin = parseFloat(document.getElementById('autoTMin').value) || 0;
-    const tMax = parseFloat(document.getElementById('autoTMax').value) || 100;
+    const tMinEl = document.getElementById('autoTMin');
+    const tMaxEl = document.getElementById('autoTMax');
+    
+    if(!tMinEl || !tMaxEl) return;
 
-    document.getElementById('rangeMinText').textContent = tMin.toFixed(1) + '°C';
-    document.getElementById('rangeMaxText').textContent = tMax.toFixed(1) + '°C';
+    const tMin = parseFloat(tMinEl.value) || 0;
+    const tMax = parseFloat(tMaxEl.value) || 100;
 
+    const rangeMinText = document.getElementById('rangeMinText');
+    const rangeMaxText = document.getElementById('rangeMaxText');
+    
+    if(rangeMinText) rangeMinText.textContent = tMin.toFixed(1) + '°C';
+    if(rangeMaxText) rangeMaxText.textContent = tMax.toFixed(1) + '°C';
+
+    // Asumiendo un rango visual de -20 a 100 grados para la barra
     const minPercent = Math.max(0, Math.min(100, ((tMin + 20) / 120) * 100));
     const maxPercent = Math.max(0, Math.min(100, ((tMax + 20) / 120) * 100));
 
-    document.getElementById('rangeMinMarker').style.left = minPercent + '%';
-    document.getElementById('rangeMaxMarker').style.left = maxPercent + '%';
+    const markerMin = document.getElementById('rangeMinMarker');
+    const markerMax = document.getElementById('rangeMaxMarker');
+
+    if(markerMin) markerMin.style.left = minPercent + '%';
+    if(markerMax) markerMax.style.left = maxPercent + '%';
 }
 
 async function saveAutoConfig() {
@@ -214,14 +246,16 @@ async function saveAutoConfig() {
 
         showFeedback('feedbackAuto', '✓ Configuración automática guardada correctamente', 'success');
     } catch (error) {
-        console.warn('Error al guardar configuración automática (endpoint no disponible):', error);
-        showFeedback('feedbackAuto', '✓ Configuración guardada localmente (endpoint no disponible)', 'info');
+        console.warn('Error al guardar configuración automática:', error);
+        showFeedback('feedbackAuto', '⚠ Error de conexión', 'error');
     }
 }
 
 // ========== PROGRAMMED MODE ==========
 function initializeRegisterUI() {
     const container = document.getElementById('registersContainer');
+    if(!container) return;
+    
     container.innerHTML = '';
 
     for (let i = 0; i < CONFIG.NUM_REGISTERS; i++) {
@@ -252,21 +286,29 @@ function initializeRegisterUI() {
             </div>
         `;
         container.innerHTML += registerHTML;
+    }
 
-        // Add listener for active checkbox
+    // Add listeners after creation
+    for (let i = 0; i < CONFIG.NUM_REGISTERS; i++) {
         const checkbox = document.getElementById(`regActive${i}`);
-        checkbox.addEventListener('change', (e) => {
-            updateRegisterItemVisualState(i, e.target.checked);
-        });
+        if(checkbox) {
+            checkbox.addEventListener('change', (e) => {
+                updateRegisterItemVisualState(i, e.target.checked);
+            });
+            // Init state
+            updateRegisterItemVisualState(i, checkbox.checked);
+        }
     }
 }
 
 function updateRegisterItemVisualState(index, isActive) {
     const item = document.getElementById(`register${index}`);
-    if (isActive) {
-        item.classList.remove('disabled');
-    } else {
-        item.classList.add('disabled');
+    if(item) {
+        if (isActive) {
+            item.classList.remove('disabled');
+        } else {
+            item.classList.add('disabled');
+        }
     }
 }
 
@@ -291,7 +333,7 @@ async function saveProgrammedConfig() {
         }
 
         registers.push({
-            active: isActive,
+            active: isActive ? 1 : 0, // Convert boolean to int for C code
             startTime: start,
             endTime: end,
             tempMin: t0,
@@ -312,8 +354,8 @@ async function saveProgrammedConfig() {
 
         showFeedback('feedbackProgrammed', '✓ Configuración programada guardada correctamente', 'success');
     } catch (error) {
-        console.warn('Error al guardar configuración programada (endpoint no disponible):', error);
-        showFeedback('feedbackProgrammed', '✓ Configuración guardada localmente (endpoint no disponible)', 'info');
+        console.warn('Error al guardar configuración programada:', error);
+        showFeedback('feedbackProgrammed', '⚠ Error de conexión', 'error');
     }
 }
 
@@ -388,7 +430,8 @@ async function sendFirmware() {
                     progressSize.textContent = '';
                 }, 5000);
             } else {
-                throw new Error(`Error ${xhr.status}`);
+                showFeedback('feedbackOTA', `❌ Error ${xhr.status}`, 'error');
+                btnSendFirmware.disabled = false;
             }
         });
 
@@ -417,26 +460,17 @@ async function sendFirmware() {
 // ========== SYSTEM STATE UPDATES ==========
 async function updateSystemState() {
     try {
-        // Try to get system state from endpoint
         const response = await fetch(CONFIG.API_ENDPOINTS.SYSTEM_STATE);
         if (response.ok) {
             const data = await response.json();
             updateUIWithSystemState(data);
             STATE.isConnected = true;
-        }
-    } catch (error) {
-        // Fallback: get temperature from dhtSensor endpoint
-        try {
-            const tempResponse = await fetch(CONFIG.API_ENDPOINTS.TEMP_SENSOR);
-            if (tempResponse.ok) {
-                const tempData = await tempResponse.json();
-                STATE.currentTemp = parseFloat(tempData.temp);
-                updateTemperatureDisplay();
-                STATE.isConnected = true;
-            }
-        } catch (e) {
+        } else {
             STATE.isConnected = false;
         }
+    } catch (error) {
+        // Error de conexión
+        STATE.isConnected = false;
     }
 
     updateConnectionStatus();
@@ -449,7 +483,7 @@ function updateUIWithSystemState(data) {
     }
 
     if (data.pir !== undefined) {
-        STATE.pirDetected = data.pir;
+        STATE.pirDetected = (data.pir === 1); // Ensure boolean
         updatePIRDisplay();
     }
 
@@ -463,6 +497,8 @@ function updateUIWithSystemState(data) {
         updatePWMDisplay();
     }
 
+    // Nota: systemState en C no estaba enviando activeRegister en tu código anterior
+    // Si decidimos agregarlo al JSON de C, esto funcionará.
     if (data.activeRegister !== undefined) {
         STATE.activeRegister = data.activeRegister;
         updateActiveRegisterDisplay();
@@ -471,10 +507,12 @@ function updateUIWithSystemState(data) {
 
 function updateTemperatureDisplay() {
     const tempElement = document.getElementById('currentTemp');
-    if (STATE.currentTemp !== null) {
-        tempElement.textContent = STATE.currentTemp.toFixed(1);
-    } else {
-        tempElement.textContent = '--';
+    if(tempElement) {
+        if (STATE.currentTemp !== null && STATE.currentTemp > -99) {
+            tempElement.textContent = STATE.currentTemp.toFixed(1);
+        } else {
+            tempElement.textContent = '--';
+        }
     }
 }
 
@@ -482,17 +520,20 @@ function updatePIRDisplay() {
     const pirStatus = document.getElementById('pirStatus');
     const pirIndicator = document.getElementById('pirIndicator');
 
-    if (STATE.pirDetected) {
-        pirStatus.textContent = 'DETECTADO';
-        pirIndicator.classList.add('active');
-    } else {
-        pirStatus.textContent = 'NO DETECTADO';
-        pirIndicator.classList.remove('active');
+    if(pirStatus && pirIndicator) {
+        if (STATE.pirDetected) {
+            pirStatus.textContent = 'DETECTADO';
+            pirIndicator.classList.add('active');
+        } else {
+            pirStatus.textContent = 'NO DETECTADO';
+            pirIndicator.classList.remove('active');
+        }
     }
 }
 
 function updateModeDisplay() {
-    document.getElementById('currentMode').textContent = CONFIG.MODE_NAMES[STATE.currentMode];
+    const currentModeText = document.getElementById('currentMode');
+    if(currentModeText) currentModeText.textContent = CONFIG.MODE_NAMES[STATE.currentMode];
 
     // Update button states
     document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -502,24 +543,64 @@ function updateModeDisplay() {
         }
     });
 
-    // Update config panel visibility
-    document.getElementById('registerCardContainer').style.display = 
-        STATE.currentMode === 2 ? 'block' : 'none';
+    // Visualmente mostrar el contenedor de registros si estamos en modo programado
+    const regContainer = document.getElementById('registerCardContainer');
+    if(regContainer) {
+        regContainer.style.display = STATE.currentMode === 2 ? 'block' : 'none';
+    }
 }
 
 function updatePWMDisplay() {
-    document.getElementById('currentPWM').textContent = STATE.currentPWM;
-    document.getElementById('pwmFill').style.width = STATE.currentPWM + '%';
+    const pwmText = document.getElementById('currentPWM');
+    const pwmFill = document.getElementById('pwmFill');
+    
+    if(pwmText) pwmText.textContent = STATE.currentPWM;
+    
+    if(pwmFill) {
+        pwmFill.style.width = STATE.currentPWM + '%';
+    }
+}
+
+/**
+ * @brief Carga los registros programados guardados desde el ESP32
+ */
+async function loadSavedRegisters() {
+    try {
+        const response = await fetch(CONFIG.API_ENDPOINTS.GET_PROGRAMMED);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.registers && Array.isArray(data.registers)) {
+                // Actualizar los campos de los registros con los valores guardados
+                for (let i = 0; i < data.registers.length && i < CONFIG.NUM_REGISTERS; i++) {
+                    const reg = data.registers[i];
+                    document.getElementById(`regActive${i}`).checked = reg.active === 1;
+                    document.getElementById(`regStart${i}`).value = reg.startTime;
+                    document.getElementById(`regEnd${i}`).value = reg.endTime;
+                    document.getElementById(`regT0${i}`).value = reg.tempMin;
+                    document.getElementById(`regT100${i}`).value = reg.tempMax;
+                    
+                    // Actualizar el estado visual
+                    updateRegisterItemVisualState(i, reg.active === 1);
+                }
+                console.log('Registros programados cargados desde ESP32');
+            }
+        }
+    } catch (error) {
+        console.warn('Error al cargar registros programados:', error);
+    }
 }
 
 function updateActiveRegisterDisplay() {
     const registerCardContainer = document.getElementById('registerCardContainer');
-    if (STATE.currentMode === 2 && STATE.activeRegister !== null) {
-        registerCardContainer.style.display = 'block';
-        document.getElementById('activeRegister').textContent = 
-            `Registro ${STATE.activeRegister + 1}`;
-    } else {
-        registerCardContainer.style.display = 'none';
+    const activeRegisterText = document.getElementById('activeRegister');
+    
+    if(registerCardContainer && activeRegisterText) {
+        if (STATE.currentMode === 2 && STATE.activeRegister !== null) {
+            registerCardContainer.style.display = 'block';
+            activeRegisterText.textContent = `Registro ${STATE.activeRegister + 1}`;
+        } else {
+            registerCardContainer.style.display = 'none';
+        }
     }
 }
 
@@ -527,12 +608,14 @@ function updateConnectionStatus() {
     const indicator = document.getElementById('connectionStatus');
     const text = document.getElementById('connectionText');
 
-    if (STATE.isConnected) {
-        indicator.classList.remove('offline');
-        text.textContent = 'Conectado';
-    } else {
-        indicator.classList.add('offline');
-        text.textContent = 'Desconectado';
+    if(indicator && text) {
+        if (STATE.isConnected) {
+            indicator.classList.remove('offline');
+            text.textContent = 'Conectado';
+        } else {
+            indicator.classList.add('offline');
+            text.textContent = 'Desconectado';
+        }
     }
 }
 
@@ -549,10 +632,12 @@ function startSystemUpdates() {
 
 function animateRefreshDot() {
     const dot = document.getElementById('refreshDot');
-    dot.style.opacity = '0.5';
-    setTimeout(() => {
-        dot.style.opacity = '1';
-    }, 200);
+    if(dot) {
+        dot.style.opacity = '0.5';
+        setTimeout(() => {
+            dot.style.opacity = '1';
+        }, 200);
+    }
 }
 
 /**
@@ -561,17 +646,18 @@ function animateRefreshDot() {
 async function updateTime() {
     try {
         const response = await fetch(CONFIG.API_ENDPOINTS.TIME);
-        if (response.ok) {
+        const headerTime = document.getElementById('headerTime');
+        
+        if (response.ok && headerTime) {
             const data = await response.json();
             if (data.time && data.time !== 'N/A') {
-                document.getElementById('headerTime').textContent = `🕐 ${data.time}`;
+                headerTime.textContent = `🕐 ${data.time}`;
             } else {
-                document.getElementById('headerTime').textContent = 'Sincronizando hora...';
+                headerTime.textContent = 'Sincronizando hora...';
             }
         }
     } catch (error) {
         console.warn('Error al obtener la hora:', error);
-        document.getElementById('headerTime').textContent = 'Hora no disponible';
     }
 }
 
@@ -586,13 +672,15 @@ function startTimeUpdates() {
 // ========== UTILITY FUNCTIONS ==========
 function showFeedback(elementId, message, type) {
     const element = document.getElementById(elementId);
-    element.textContent = message;
-    element.className = `feedback-message show ${type}`;
+    if(element) {
+        element.textContent = message;
+        element.className = `feedback-message show ${type}`;
 
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        element.classList.remove('show');
-    }, 5000);
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            element.classList.remove('show');
+        }, 5000);
+    }
 }
 
 // ========== CLEANUP ==========
