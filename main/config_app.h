@@ -8,6 +8,9 @@
 
 // --- PIR Sensor ---
 #define PIR_SENSOR_GPIO         GPIO_NUM_3      // GPIO para el sensor PIR (detecta presencia)
+// Si tu sensor PIR entrega nivel LOW cuando detecta movimiento, define PIR_ACTIVE_LOW a 1
+// De lo contrario déjalo en 0 para sensores activos en HIGH
+#define PIR_ACTIVE_LOW          1
 
 // --- Fan Control (LEDC/PWM) ---
 #define FAN_PWM_GPIO            GPIO_NUM_1      // GPIO para el control PWM del ventilador

@@ -2,6 +2,7 @@
 #define PIR_SENSOR_H
 
 #include "freertos/FreeRTOS.h"
+#include <stdbool.h>
 
 /**
  * @brief Inicializa el sensor PIR (GPIO).
@@ -22,5 +23,11 @@ int pir_sensor_get_state(void);
  * Se usa si queremos implementar un timeout de presencia.
  */
 void pir_sensor_reset_timeout(void);
+
+/**
+ * @brief Indica si el PIR está configurado como activo-bajo.
+ * @return true si PIR es activo-bajo (LEVEL=0 -> presencia), false si activo-alto.
+ */
+bool pir_sensor_is_active_low(void);
 
 #endif // PIR_SENSOR_H
