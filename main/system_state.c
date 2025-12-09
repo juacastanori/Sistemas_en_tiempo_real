@@ -1,7 +1,10 @@
-/*
- * system_state.c
+/**
+ * @file system_state.c
+ * @brief Gestión del estado del sistema y lógica de control del ventilador.
  *
- * System state management and fan control logic implementation
+ * Implementa la tarea de control única que posee el estado de ejecución,
+ * aplica actualizaciones de configuración, calcula el PWM deseado según el
+ * modo (manual/automático/programado) y persiste parámetros relevantes en NVS.
  */
 
 #include "system_state.h"
@@ -16,12 +19,12 @@
 static const char TAG[] = "SYSTEM_STATE";
 
 /**
- * @brief Load configuration from flash on startup
+ * @brief Carga la configuración desde flash al inicio
  */
 static void load_initial_config(int *current_pwm_out, float *auto_t_min_out, float *auto_t_max_out, scheduled_register_t registers_out[3])
 {
     ESP_LOGI(TAG, "Loading initial configuration from flash...");
-    // Load manual PWM
+    /* Cargar PWM manual */
     int saved_pwm = 0;
     if (nvs_config_load_manual_pwm(&saved_pwm) == 0) {
         *current_pwm_out = saved_pwm;
@@ -31,7 +34,7 @@ static void load_initial_config(int *current_pwm_out, float *auto_t_min_out, flo
         ESP_LOGW(TAG, "No saved manual PWM, using default: 0%%");
     }
 
-    // Load automatic temperatures
+    /* Cargar temperaturas automáticas */
     float saved_tmin = 20.0f, saved_tmax = 30.0f;
     if (nvs_config_load_auto_temps(&saved_tmin, &saved_tmax) == 0) {
         *auto_t_min_out = saved_tmin;
@@ -43,13 +46,26 @@ static void load_initial_config(int *current_pwm_out, float *auto_t_min_out, flo
         ESP_LOGW(TAG, "No saved auto temps, using defaults: 20-30°C");
     }
 
-    // Load programmed registers
+    /* Cargar registros programados */
     nvs_config_load_all_registers(registers_out);
     ESP_LOGI(TAG, "Programmed registers loaded");
 }
 
 /**
- * @brief Handle configuration updates from HTTP server
+ * @brief Gestiona actualizaciones de configuración recibidas desde el servidor HTTP.
+ *
+ * Esta función aplica los valores pendientes de `config_update_t` en la
+ * configuración de ejecución local de la tarea y persiste los campos relevantes en NVS.
+ * Sigue la convención de que un campo contiene un indicador de "sin cambio"
+ * (p. ej. `-1` para enteros, `NaN` para floats) y solo aplica valores que
+ * se proporcionan explícitamente.
+ *
+ * @param update Puntero al mensaje de actualización de configuración (solo lectura).
+ * @param current_mode Puntero a la variable local de tarea que contiene el modo actual.
+ * @param current_pwm Puntero al valor local de PWM manual a actualizar.
+ * @param auto_t_min Puntero al valor local mínimo de temperatura automática.
+ * @param auto_t_max Puntero al valor local máximo de temperatura automática.
+ * @param registers Array de 3 registros programados (locales) a actualizar cuando se solicite.
  */
 static void handle_config_update(const config_update_t *update, int *current_mode, int *current_pwm, float *auto_t_min, float *auto_t_max, scheduled_register_t registers[3])
 {
@@ -83,7 +99,7 @@ static void handle_config_update(const config_update_t *update, int *current_mod
 int system_state_get_registers(scheduled_register_t out[3])
 {
     if (out == NULL) return -1;
-    // Read the registers from the latest published system state (state queue)
+    /* Leer los registros desde el estado publicado más reciente (cola de estado) */
     QueueHandle_t state_q = queues_get_system_state_queue();
     if (state_q == NULL) return -1;
     system_state_t st;
@@ -95,8 +111,31 @@ int system_state_get_registers(scheduled_register_t out[3])
 }
 
 /**
- * @brief Main system control task
- * Implements the fan control logic
+ * @brief Tarea de control del sistema (bucle de control del ventilador, escritor único).
+ *
+ * La `system_control_task` es la propietaria autorizada de la configuración de
+ * ejecución y la toma de decisiones. Realiza las siguientes acciones en un
+ * bucle continuo (cada 500 ms):
+ *
+ * - Consume mensajes `config_update_t` desde `config_update_queue` y los aplica
+ *   (vía `handle_config_update`).
+ * - Lee la última temperatura desde `temperature_queue` y el estado del PIR
+ *   desde `pir_queue`.
+ * - Calcula el PWM deseado según el modo activo:
+ *   - Manual: usar el valor de PWM manual.
+ *   - Automático: si se detecta PIR, mapear la temperatura linealmente entre
+ *     `auto_t_min` y `auto_t_max` a 0-100%; en caso contrario 0%.
+ *   - Programado: comprobar los 3 registros programados y, si existe un registro
+ *     activo que coincide con la hora actual y el PIR está presente, calcular el PWM
+ *     proporcional entre `temp_min` y `temp_max` del registro.
+ * - Publicar el `system_state_t` resultante en `system_state_queue` y
+ *   reenviar comandos PWM al hardware del ventilador mediante `fan_control_set_pwm` y
+ *   `fan_signal_queue`.
+ *
+ * La tarea mantiene todo el estado mutable local a sí misma (patrón escritor único)
+ * y persiste los cambios en NVS cuando se aplican actualizaciones de configuración.
+ *
+ * @param pvParameters No usado.
  */
 void system_control_task(void *pvParameters)
 {
@@ -108,14 +147,14 @@ void system_control_task(void *pvParameters)
     int current_hour, current_min;
     int register_active = -1;
 
-    // Local state (task-local; not global)
+    /* Estado local (local de la tarea; no global) */
     int current_mode = 0;
     int current_pwm = 0;
     float auto_t_min = 20.0f;
     float auto_t_max = 30.0f;
     scheduled_register_t registers[3] = {0};
 
-    // Load configuration from flash on startup
+    /* Cargar configuración desde flash al iniciar */
     load_initial_config(&current_pwm, &auto_t_min, &auto_t_max, registers);
 
     QueueHandle_t config_queue = queues_get_config_update_queue();
@@ -127,17 +166,17 @@ void system_control_task(void *pvParameters)
     config_update_t config_update;
 
     while (1) {
-        // Check for configuration updates (non-blocking)
+        /* Revisar actualizaciones de configuración (sin bloqueo) */
         if (xQueueReceive(config_queue, &config_update, 0) == pdTRUE) {
             handle_config_update(&config_update, &current_mode, &current_pwm, &auto_t_min, &auto_t_max, registers);
         }
 
-        // Get current temperature
+        /* Obtener temperatura actual */
         if (xQueuePeek(temp_queue, &temperature, 0) != pdTRUE) {
             temperature = -99.9f;
         }
 
-        // Get PIR state from central PIR queue
+        /* Obtener estado del PIR desde la cola central de PIR */
         if (pir_queue != NULL) {
             if (xQueuePeek(pir_queue, &pir_state, 0) != pdTRUE) {
                 pir_state = 0;
@@ -146,13 +185,13 @@ void system_control_task(void *pvParameters)
             pir_state = 0;
         }
 
-        // Get current time
+        /* Obtener hora actual */
         time(&now);
         localtime_r(&now, &timeinfo);
         current_hour = timeinfo.tm_hour;
         current_min = timeinfo.tm_min;
 
-        // Reset PWM and active register
+        /* Resetear PWM y registro activo */
         calculated_pwm = 0;
         register_active = -1;
 
@@ -165,7 +204,7 @@ void system_control_task(void *pvParameters)
 
             case 1:  // AUTOMATIC MODE
                 if (pir_state) {
-                    // Calculate proportional PWM based on temperature
+                    /* Calcular PWM proporcional basado en la temperatura */
                     if (temperature <= auto_t_min) {
                         calculated_pwm = 0;
                     } else if (temperature >= auto_t_max) {
@@ -182,8 +221,8 @@ void system_control_task(void *pvParameters)
                          temperature, pir_state, calculated_pwm);
                 break;
 
-            case 2:  // PROGRAMMED MODE
-                // Check if current time matches any active register
+            case 2:  /* MODO PROGRAMADO */
+                /* Comprobar si la hora actual coincide con algún registro activo */
                 for (int i = 0; i < 3; i++) {
                     if (!registers[i].active) continue;
 
@@ -219,16 +258,16 @@ void system_control_task(void *pvParameters)
                 break;
         }
 
-        // Clamp PWM to 0-100
+        /* Limitar PWM entre 0 y 100 */
         if (calculated_pwm < 0) calculated_pwm = 0;
         if (calculated_pwm > 100) calculated_pwm = 100;
 
-        // Send PWM command to fan
+        /* Enviar comando PWM al ventilador */
         fan_signal_t fan_signal = { .pwm_value = calculated_pwm };
         xQueueOverwrite(fan_queue, &fan_signal);
         fan_control_set_pwm(calculated_pwm);
 
-        // Update system state queue for HTTP/display
+        /* Actualizar cola de estado del sistema para HTTP/pantalla */
         system_state_t state = {
             .temperature = temperature,
             .pir_state = pir_state,
@@ -238,7 +277,7 @@ void system_control_task(void *pvParameters)
             .auto_t_max = auto_t_max,
             .active_register = register_active,
         };
-        // copy registers into state
+        /* Copiar registros al estado */
         for (int i = 0; i < 3; i++) state.registers[i] = registers[i];
         xQueueOverwrite(state_queue, &state);
 

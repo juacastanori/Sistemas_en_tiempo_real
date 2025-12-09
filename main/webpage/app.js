@@ -14,7 +14,8 @@ const CONFIG = {
         GET_PROGRAMMED: '/getProgrammed',
         OTA_UPDATE: '/OTAupdate',
         OTA_STATUS: '/OTAstatus',
-        TIME: '/time.json'
+        TIME: '/time.json',
+        SAVE_WIFI: '/saveWiFi'
     },
     UPDATE_INTERVAL: 2000,
     MODES: {
@@ -102,6 +103,10 @@ function initializeEventListeners() {
     
     const btnSendFirmware = document.getElementById('btnSendFirmware');
     if(btnSendFirmware) btnSendFirmware.addEventListener('click', sendFirmware);
+
+    // WiFi Configuration
+    const btnSaveWiFi = document.getElementById('btnSaveWiFi');
+    if(btnSaveWiFi) btnSaveWiFi.addEventListener('click', saveWiFiConfig);
 }
 
 // ========== MODE MANAGEMENT ==========
@@ -457,7 +462,77 @@ async function sendFirmware() {
     }
 }
 
-// ========== SYSTEM STATE UPDATES ==========
+// ========== WiFi CONFIGURATION ==========
+/**
+ * Guarda las credenciales WiFi STA
+ */
+async function saveWiFiConfig() {
+    const ssidInput = document.getElementById('wifiSSID');
+    const passwordInput = document.getElementById('wifiPassword');
+    const feedbackEl = document.getElementById('feedbackWiFi');
+    const btnSaveWiFi = document.getElementById('btnSaveWiFi');
+
+    const ssid = ssidInput.value.trim();
+    const password = passwordInput.value.trim();
+
+    // Validación básica
+    if (!ssid) {
+        showFeedback('feedbackWiFi', '❌ Ingresa el nombre de la red WiFi (SSID)', 'error');
+        return;
+    }
+
+    if (!password) {
+        showFeedback('feedbackWiFi', '❌ Ingresa la contraseña WiFi', 'error');
+        return;
+    }
+
+    if (ssid.length > 32) {
+        showFeedback('feedbackWiFi', '❌ El SSID no puede exceder 32 caracteres', 'error');
+        return;
+    }
+
+    if (password.length > 64) {
+        showFeedback('feedbackWiFi', '❌ La contraseña no puede exceder 64 caracteres', 'error');
+        return;
+    }
+
+    btnSaveWiFi.disabled = true;
+    showFeedback('feedbackWiFi', '⏳ Guardando credenciales WiFi...', 'info');
+
+    try {
+        const response = await fetch('/saveWiFi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                ssid: ssid,
+                password: password
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === 'ok') {
+            showFeedback('feedbackWiFi', '✓ Credenciales guardadas correctamente. El dispositivo intentará conectarse a la nueva red...', 'success');
+            // Limpiar campos
+            ssidInput.value = '';
+            passwordInput.value = '';
+            // Auto-reset feedback después de 5 segundos
+            setTimeout(() => {
+                feedbackEl.textContent = '';
+                feedbackEl.className = '';
+            }, 5000);
+        } else {
+            showFeedback('feedbackWiFi', `❌ Error: ${data.message || 'No se pudieron guardar las credenciales'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showFeedback('feedbackWiFi', '❌ Error de conexión: ' + error.message, 'error');
+    } finally {
+        btnSaveWiFi.disabled = false;
+    }
+}
+
+// ========== SYSTEM STATE UPDATES ========== 
 async function updateSystemState() {
     try {
         const response = await fetch(CONFIG.API_ENDPOINTS.SYSTEM_STATE);

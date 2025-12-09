@@ -1,14 +1,23 @@
+/**
+ * @file thermistor_reader.c
+ * @brief Lector ADC del termistor y cálculo de temperatura.
+ *
+ * Inicializa la unidad ADC oneshot y la calibración opcional, muestrea
+ * periódicamente el circuito del termistor, convierte lecturas crudas a
+ * grados Celsius usando la ecuación Beta y publica la temperatura actual
+ * en la cola central `temperature_queue`.
+ */
+
 #include "thermistor_reader.h"
 #include "queues.h"
-#include "config_app.h" // Asumo que esta tiene las constantes (VCC_MV, R_FIXED_OHMS, etc.)
-
+#include "config_app.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h" // Nuevo: Incluir FreeRTOS Queue
+#include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_adc/adc_oneshot.h"
@@ -22,7 +31,7 @@ typedef struct {
     adc_cali_handle_t cali_term_handle;
 } thermistor_ctx_t;
 
-// --- Funciones de Calibracion ADC (se mantienen sin cambios) ---
+/* --- Funciones de calibración ADC (se mantienen sin cambios) --- */
 
 static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
 {
@@ -85,8 +94,25 @@ static void example_adc_calibration_deinit(adc_cali_handle_t handle)
     #endif
 }
 
-// --- Tarea de lectura del termistor ---
+/* --- Tarea de lectura del termistor --- */
 
+/**
+ * @brief Tarea de muestreo del termistor.
+ *
+ * Esta tarea muestrea periódicamente el canal ADC conectado al termistor,
+ * convierte la lectura cruda a temperatura en Celsius mediante la ecuación
+ * Beta y publica el valor (float) en la cola central `temperature_queue`
+ * usando `xQueueOverwrite`.
+ *
+ * El parámetro `pvParameters` debe ser un puntero a `thermistor_ctx_t`
+ * devuelto por `thermistor_init()` que contiene los manejadores ADC y de
+ * calibración necesarios para la lectura y conversión.
+ *
+ * Tiempo: la tarea duerme `500 ms` entre muestras para proporcionar
+ * actualizaciones frecuentes sin saturar el ADC.
+ *
+ * @param pvParameters Puntero a `thermistor_ctx_t` devuelto por `thermistor_init()`.
+ */
 void thermistor_read_task(void *pvParameters)
 {
     thermistor_ctx_t *ctx = (thermistor_ctx_t *)pvParameters;
@@ -96,17 +122,17 @@ void thermistor_read_task(void *pvParameters)
     QueueHandle_t temp_queue_handle = NULL;
 
     while(1) {
-        // 1. Leer el ADC del termistor
+        /* 1. Leer el ADC del termistor */
         ESP_ERROR_CHECK(adc_oneshot_read(ctx->adc1_handle, EXAMPLE_ADC1_CHAN_TERM, &raw_term));
         
-        // 2. Convertir RAW a Voltaje (mV)
+        /* 2. Convertir valor crudo a voltaje (mV) */
         if (ctx->cali_term_handle) {
             adc_cali_raw_to_voltage(ctx->cali_term_handle, raw_term, &volt_term);
         } else {
             volt_term = (int)((float)raw_term * VCC_MV / ADC_MAX_RAW);
         }
 
-        // 3. Cálculo de Temperatura (Ecuación Beta)
+        /* 3. Cálculo de temperatura usando la ecuación Beta */
         float v_therm_mv = (float)volt_term;
         
         float v_over_vcc = v_therm_mv / VCC_MV;
@@ -117,10 +143,10 @@ void thermistor_read_task(void *pvParameters)
         
         float temp_k = 1.0f / ( (1.0f / T0_K) + (1.0f / BETA_CONST) * logf(r_therm / R0_OHMS) );
         
-        // Convertir a Celsius
+        /* Convertir de Kelvin a Celsius */
         temp_c = temp_k - 273.15f;
 
-           // 4. Enviar la temperatura a la cola central (sobrescribiendo el valor anterior)
+           /* 4. Enviar la temperatura a la cola central (sobrescribiendo el valor anterior) */
            if (temp_queue_handle == NULL) temp_queue_handle = queues_get_temperature_queue();
            if (temp_queue_handle != NULL) {
                xQueueOverwrite(temp_queue_handle, &temp_c);
@@ -128,47 +154,55 @@ void thermistor_read_task(void *pvParameters)
 
         ESP_LOGI(TAG, "Raw: %d, Volt: %d mV, Temp: %.2f C", raw_term, volt_term, temp_c);
 
-        vTaskDelay(pdMS_TO_TICKS(500)); // Lee y actualiza cada 500 ms
+        vTaskDelay(pdMS_TO_TICKS(500)); /* Leer y actualizar cada 500 ms */
     }
 }
 
-// --- Implementación de la Interfaz Pública ---
+/* --- Implementación de la interfaz pública --- */
 
 void *thermistor_init(void)
 {
-    // The temperature queue is created centrally by queues_init(); nothing to do here.
+    /* La cola de temperatura se crea centralmente en queues_init(); nada que hacer aquí */
 
-    // Allocate context to hold handles (returned to main so it can pass to the task)
+    /* Asignar contexto para almacenar los manejadores (se retorna a main para pasar a la tarea) */
     thermistor_ctx_t *ctx = calloc(1, sizeof(thermistor_ctx_t));
     if (!ctx) {
         ESP_LOGE(TAG, "Failed to allocate thermistor context");
         return NULL;
     }
 
-    // --- ADC1 Init ---
+    /* --- Inicialización ADC1 --- */
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
     };
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &ctx->adc1_handle));
 
-    // --- ADC1 Config ---
+    /* --- Configuración ADC1 --- */
     adc_oneshot_chan_cfg_t config = {
         .atten = EXAMPLE_ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(ctx->adc1_handle, EXAMPLE_ADC1_CHAN_TERM, &config));
 
-    // --- ADC1 Calibration Init ---
+    /* --- Inicialización de calibración ADC1 --- */
     if (!example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN_TERM, EXAMPLE_ADC_ATTEN, &ctx->cali_term_handle)) {
         ESP_LOGW(TAG, "Thermistor calibration failed or not supported. Using raw scaling.");
     }
 
-    // Return context; the caller (main) must pass it as pvParameters to the task
+    /**
+     * @brief Devuelve el contexto del termistor.
+     *
+     * El contexto retornado debe pasarse como `pvParameters` a
+     * `thermistor_read_task()` para que la tarea pueda usar los manejadores
+     * ADC y de calibración.
+     *
+     * @return Puntero a `thermistor_ctx_t` o NULL en caso de error.
+     */
     return ctx;
 }
 
 QueueHandle_t get_temperature_queue_handle(void)
 {
-    // Retorna la cola central para temperatura
+    /* Retorna la cola central para temperatura */
     return queues_get_temperature_queue();
 }

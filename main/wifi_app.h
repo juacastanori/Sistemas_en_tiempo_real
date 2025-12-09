@@ -1,3 +1,11 @@
+/*
+ * wifi_app.h
+ *
+ * Interfaz pública de la aplicación WiFi.
+ * La documentación está en Español (Doxygen). Las cadenas de log deben
+ * mantenerse en inglés según la convención del proyecto.
+ */
+
 #ifndef MAIN_WIFI_APP_H_
 #define MAIN_WIFI_APP_H_
 
@@ -30,13 +38,12 @@ typedef void (*wifi_connected_event_callback_t)(void);
 #define MAX_PASSWORD_LENGTH             64                      // Estándar IEEE máximo
 #define MAX_CONNECTION_RETRIES          5                       // Número de reintentos de desconexión
 
-// netif object for the Station and Access Point
-// Internals: `esp_netif` handles are file-local to `wifi_app.c`.
-// If external access is required, add accessor functions instead of public globals.
+/* Objeto netif para la estación (STA) y punto de acceso (AP).
+ * Internals: los objetos `esp_netif` son locales a `wifi_app.c`. Si se necesita
+ * acceso externo, exponer funciones accesoras en lugar de variables globales. */
 
 /**
- * Message IDs for the WiFi application task
- * @note Expand this based on your application requirements.
+ * @brief Identificadores de mensaje para la cola de la tarea WiFi.
  */
 typedef enum wifi_app_message
 {
@@ -59,41 +66,42 @@ typedef struct wifi_app_queue_message
 } wifi_app_queue_message_t;
 
 /**
- * Sends a message to the queue
- * @param msgID message ID from the wifi_app_message_e enum.
- * @return pdTRUE if an item was successfully sent to the queue, otherwise pdFALSE.
- * @note Expand the parameter list based on your requirements e.g. how you've expanded the wifi_app_queue_message_t.
+ * @brief Envía un mensaje a la cola de la aplicación WiFi.
+ * @param msgID Identificador del mensaje a enviar.
+ * @return pdTRUE si el envío tuvo éxito, pdFALSE en caso contrario.
  */
 BaseType_t wifi_app_send_message(wifi_app_message_e msgID);
 
 /**
- * Starts the WiFi RTOS task
+ * @brief Inicializa y crea la tarea WiFi (debe ser invocada desde `main`).
  */
 void wifi_app_start(void);
 
 /**
- * @brief Task function for the WiFi application. Create this with xTaskCreatePinnedToCore() from `app_main`.
+ * @brief Tarea RTOS principal de la aplicación WiFi.
+ * @param pvParameters Parámetro pasado a la tarea (no usado).
  */
 void wifi_app_task(void *pvParameters);
 
 /**
- * Gets the wifi configuration
+ * @brief Obtiene la estructura de configuración WiFi (si está disponible).
+ * @return Puntero a `wifi_config_t` o NULL si no está implementado.
  */
 wifi_config_t* wifi_app_get_wifi_config(void);
 
 /**
- * Sets the callback function.
+ * @brief Registra un callback que será invocado cuando se establezca conexión.
  */
 void wifi_app_set_callback(wifi_connected_event_callback_t cb);
 
 /**
- * Calls the callback function.
+ * @brief Invoca el callback registrado (si existe).
  */
 void wifi_app_call_callback(void);
 
 /**
- * Gets the RSSI value of the Wifi connection.
- * @return current RSSI level.
+ * @brief Devuelve el RSSI actual de la conexión WiFi.
+ * @return Nivel RSSI actual.
  */
 int8_t wifi_app_get_rssi(void);
 

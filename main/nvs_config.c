@@ -1,38 +1,42 @@
 /*
  * nvs_config.c
  *
- * Non-Volatile Storage (Flash) configuration implementation
- * Uses ESP-IDF NVS library to persistently store system configuration
+ * Implementación de configuración en almacenamiento no volátil (Flash)
+ * Utiliza la librería NVS de ESP-IDF para almacenar de forma persistente
+ * la configuración del sistema
  */
 
 #include "nvs_config.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "wifi_app.h"
 #include <string.h>
 
 static const char TAG[] = "NVS_CONFIG";
 
-// NVS namespace for our application
+/* Espacio de nombres NVS para la aplicación */
 #define NVS_NAMESPACE "config"
 
-// NVS key names
+/* Claves NVS para almacenar valores */
 #define NVS_KEY_MANUAL_PWM      "manual_pwm"
 #define NVS_KEY_AUTO_TMIN       "auto_tmin"
 #define NVS_KEY_AUTO_TMAX       "auto_tmax"
 #define NVS_KEY_REG_0           "reg_0"
 #define NVS_KEY_REG_1           "reg_1"
 #define NVS_KEY_REG_2           "reg_2"
+#define NVS_KEY_WIFI_SSID       "wifi_ssid"
+#define NVS_KEY_WIFI_PASSWORD   "wifi_password"
 
 /**
- * @brief Initialize NVS
+ * @brief Inicializa NVS (almacenamiento Flash)
  */
 int nvs_config_init(void)
 {
     esp_err_t err = nvs_flash_init();
 
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        // Retry nvs_flash_init
+        /* Partición NVS fue truncada y necesita ser borrada */
+        /* Reintentar nvs_flash_init */
         ESP_LOGW(TAG, "NVS partition needs erasing; erasing and reinitializing");
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
@@ -48,7 +52,7 @@ int nvs_config_init(void)
 }
 
 /**
- * @brief Deinitialize NVS
+ * @brief Desinicializa NVS
  */
 int nvs_config_deinit(void)
 {
@@ -58,7 +62,7 @@ int nvs_config_deinit(void)
 }
 
 /* ============================================================
- *           MANUAL MODE: Store and Load PWM
+ *           Modo Manual: Guardar y cargar PWM
  * ============================================================*/
 
 int nvs_config_save_manual_pwm(int pwm_value)
@@ -66,7 +70,7 @@ int nvs_config_save_manual_pwm(int pwm_value)
     nvs_handle_t handle;
     esp_err_t err;
 
-    // Clamp PWM to valid range
+    /* Limitar el valor de PWM al rango válido */
     if (pwm_value < 0) pwm_value = 0;
     if (pwm_value > 100) pwm_value = 100;
 
@@ -129,7 +133,7 @@ int nvs_config_load_manual_pwm(int *pwm_value)
 }
 
 /* ============================================================
- *        AUTOMATIC MODE: Store and Load Tmin/Tmax
+ *        Modo Automático: Guardar y cargar Tmin/Tmax
  * ============================================================*/
 
 int nvs_config_save_auto_temps(float tmin, float tmax)
@@ -143,7 +147,7 @@ int nvs_config_save_auto_temps(float tmin, float tmax)
         return -1;
     }
 
-    // Store as uint32_t bit-cast (float is 4 bytes)
+    /* Almacenar como uint32_t reinterpretado (float tiene 4 bytes) */
     uint32_t tmin_bits = *(uint32_t *)&tmin;
     uint32_t tmax_bits = *(uint32_t *)&tmax;
 
@@ -205,7 +209,7 @@ int nvs_config_load_auto_temps(float *tmin, float *tmax)
         return -1;
     }
 
-    // Bit-cast back to float
+    /* Reinterpretar bits de vuelta a float */
     *tmin = *(float *)&tmin_bits;
     *tmax = *(float *)&tmax_bits;
 
@@ -214,7 +218,7 @@ int nvs_config_load_auto_temps(float *tmin, float *tmax)
 }
 
 /* ============================================================
- *      PROGRAMMED MODE: Store and Load Registers
+ *      Modo Programado: Guardar y cargar registros
  * ============================================================*/
 
 int nvs_config_save_register(int index, const scheduled_register_t *reg)
@@ -233,7 +237,7 @@ int nvs_config_save_register(int index, const scheduled_register_t *reg)
         return -1;
     }
 
-    // Select key based on index
+    /* Seleccionar clave según índice */
     switch (index) {
         case 0: key = NVS_KEY_REG_0; break;
         case 1: key = NVS_KEY_REG_1; break;
@@ -246,7 +250,7 @@ int nvs_config_save_register(int index, const scheduled_register_t *reg)
         return -1;
     }
 
-    // Store as blob (raw binary data)
+    /* Almacenar como blob (datos binarios crudos) */
     err = nvs_set_blob(handle, key, reg, sizeof(scheduled_register_t));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nvs_set_blob failed for register %d: %s", index, esp_err_to_name(err));
@@ -285,7 +289,7 @@ int nvs_config_load_register(int index, scheduled_register_t *reg)
         return -1;
     }
 
-    // Select key based on index
+    /* Seleccionar clave según índice */
     switch (index) {
         case 0: key = NVS_KEY_REG_0; break;
         case 1: key = NVS_KEY_REG_1; break;
@@ -348,7 +352,7 @@ int nvs_config_load_all_registers(scheduled_register_t *registers)
     for (int i = 0; i < 3; i++) {
         ret = nvs_config_load_register(i, &registers[i]);
         if (ret != 0) {
-            // If a register fails to load, initialize it with defaults
+            // Si un registro no se pudo cargar, inicializarlo con valores por defecto
             registers[i].active = 0;
             registers[i].start_hour = 0;
             registers[i].start_min = 0;
@@ -365,7 +369,7 @@ int nvs_config_load_all_registers(scheduled_register_t *registers)
 }
 
 /* ============================================================
- *           HELPER: Clear all configurations
+ *           HELPER: Limpiar todas las configuraciones
  * ============================================================*/
 
 int nvs_config_erase_all(void)
@@ -394,6 +398,112 @@ int nvs_config_erase_all(void)
         return 0;
     } else {
         ESP_LOGE(TAG, "nvs_commit failed: %s", esp_err_to_name(err));
+        return -1;
+    }
+}
+
+/* ============================================================
+ *     Credenciales WiFi STA: Guardar y cargar SSID/Password
+ * ============================================================*/
+
+/**
+ * @brief Guarda las credenciales WiFi STA (SSID y contraseña) en flash
+ */
+int nvs_config_save_wifi_credentials(const char *ssid, const char *password)
+{
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    if (ssid == NULL || password == NULL) {
+        ESP_LOGE(TAG, "SSID or password pointer is NULL");
+        return -1;
+    }
+
+    // Validar longitudes
+    if (strlen(ssid) > MAX_SSID_LENGTH || strlen(password) > MAX_PASSWORD_LENGTH) {
+        ESP_LOGE(TAG, "SSID or password exceeds maximum length");
+        return -1;
+    }
+
+    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_open failed: %s", esp_err_to_name(err));
+        return -1;
+    }
+
+    // Guardar SSID
+    err = nvs_set_str(handle, NVS_KEY_WIFI_SSID, ssid);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_set_str failed for SSID: %s", esp_err_to_name(err));
+        nvs_close(handle);
+        return -1;
+    }
+
+    // Guardar Password
+    err = nvs_set_str(handle, NVS_KEY_WIFI_PASSWORD, password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_set_str failed for password: %s", esp_err_to_name(err));
+        nvs_close(handle);
+        return -1;
+    }
+
+    err = nvs_commit(handle);
+    nvs_close(handle);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials saved: SSID=%s", ssid);
+        return 0;
+    } else {
+        ESP_LOGE(TAG, "nvs_commit failed: %s", esp_err_to_name(err));
+        return -1;
+    }
+}
+
+/**
+ * @brief Carga las credenciales WiFi STA desde flash
+ */
+int nvs_config_load_wifi_credentials(char *ssid, char *password)
+{
+    nvs_handle_t handle;
+    esp_err_t err;
+    size_t ssid_len = MAX_SSID_LENGTH + 1;
+    size_t password_len = MAX_PASSWORD_LENGTH + 1;
+
+    if (ssid == NULL || password == NULL) {
+        ESP_LOGE(TAG, "SSID or password pointer is NULL");
+        return -1;
+    }
+
+    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs_open failed: %s (credentials may not exist)", esp_err_to_name(err));
+        return -1;
+    }
+
+    // Cargar SSID
+    err = nvs_get_str(handle, NVS_KEY_WIFI_SSID, ssid, &ssid_len);
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGW(TAG, "WiFi SSID key not found in NVS");
+        } else {
+            ESP_LOGE(TAG, "nvs_get_str failed for SSID: %s", esp_err_to_name(err));
+        }
+        nvs_close(handle);
+        return -1;
+    }
+
+    // Cargar Password
+    err = nvs_get_str(handle, NVS_KEY_WIFI_PASSWORD, password, &password_len);
+    nvs_close(handle);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials loaded: SSID=%s", ssid);
+        return 0;
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "WiFi password key not found in NVS");
+        return -1;
+    } else {
+        ESP_LOGE(TAG, "nvs_get_str failed for password: %s", esp_err_to_name(err));
         return -1;
     }
 }

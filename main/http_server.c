@@ -1,3 +1,14 @@
+/**
+ * @file http_server.c
+ * @brief Manejadores del servidor HTTP y tarea de monitor.
+ *
+ * Este módulo implementa los endpoints de la API usados por la interfaz
+ * web embebida para leer el estado del sistema, cambiar la configuración
+ * (manual/auto/programado) y realizar actualizaciones OTA. La gestión del
+ * ciclo de vida del servidor y el manejo de resultados OTA se delegan a una
+ * tarea local de monitor que posee la instancia `httpd_handle_t`.
+ */
+
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -18,16 +29,22 @@
 #include "nvs_config.h"
 #include "system_state.h"
 
-// Tag used for ESP serial console messages
+/**
+ * @brief Etiqueta para mensajes por consola ESP
+ */
 static const char TAG[] = "http_server";
 
-// Firmware update status (file-local)
-// No file-scope globals for state; using centralized queues for monitor/status.
+/*
+ * Estado de actualización de firmware (a nivel de archivo).
+ * No existen variables globales mutables; se usan colas centralizadas
+ * para comunicar el estado entre tareas y el monitor.
+ *
+ * Nota: las variables globales tipo `g_` fueron eliminadas. El estado y los
+ * registros se acceden a través de la API de `system_state` / colas para
+ * garantizar seguridad entre hilos y claridad arquitectónica.
+ */
 
-// NOTE: global `g_` variables removed. State and registers are accessed
-// through the system_state API / queues for thread-safety and clarity.
-
-// ===== Embedded Frontend Files =====
+/* ===== Archivos de la interfaz web embebida ===== */
 extern const uint8_t jquery_3_3_1_min_js_start[]    asm("_binary_jquery_3_3_1_min_js_start");
 extern const uint8_t jquery_3_3_1_min_js_end[]      asm("_binary_jquery_3_3_1_min_js_end");
 extern const uint8_t index_html_start[]             asm("_binary_index_html_start");
@@ -39,11 +56,11 @@ extern const uint8_t app_js_end[]                   asm("_binary_app_js_end");
 extern const uint8_t favicon_ico_start[]            asm("_binary_favicon_ico_start");
 extern const uint8_t favicon_ico_end[]              asm("_binary_favicon_ico_end");
 
-// Forward declaration
+/* Declaración adelantada */
 static httpd_handle_t http_server_configure(void);
 
 /*******************************************************
- * SNTP TIME HANDLER
+ * Manejador de tiempo SNTP
  ********************************************************/
 
 static esp_err_t http_server_get_time_json_handler(httpd_req_t *req)
@@ -66,13 +83,13 @@ static esp_err_t http_server_get_time_json_handler(httpd_req_t *req)
     return ESP_OK;
 }
 /*******************************************************
- * NEW SYSTEM JSON HANDLERS
+ * Manejadores JSON del sistema
  ********************************************************/
 
 static esp_err_t http_server_get_system_state_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/systemState requested");
-    // Get latest state from queue (non-blocking)
+    /* Obtener el estado más reciente de la cola (sin bloqueo) */
     system_state_t local_state = {0};
     QueueHandle_t state_queue = queues_get_system_state_queue();
     if (state_queue != NULL) {
@@ -203,7 +220,7 @@ static esp_err_t http_server_save_programmed_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/saveProgrammed requested");
 
-    char buf[1024];
+    char buf[512]={0};
     int len = httpd_req_recv(req, buf, sizeof(buf));
     if (len <= 0) return ESP_FAIL;
 
@@ -216,7 +233,7 @@ static esp_err_t http_server_save_programmed_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    // Parse registers from JSON
+    /* Analizar registros desde JSON */
     config_update_t update = {0};
     update.mode = -1;
     update.manual_pwm = -1;
@@ -242,7 +259,7 @@ static esp_err_t http_server_save_programmed_handler(httpd_req_t *req)
         i++;
     }
 
-    // Send update to queue
+    // Enviar actualización a la cola
     QueueHandle_t config_queue = queues_get_config_update_queue();
     if (config_queue != NULL) {
         xQueueSend(config_queue, &update, portMAX_DELAY);
@@ -261,12 +278,12 @@ static esp_err_t http_server_get_programmed_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/getProgrammed requested");
 
-    char buf[1024];
+    char buf[512]={0};
     int offset = 0;
 
-    scheduled_register_t regs[3];
+    scheduled_register_t regs[3] ={0};
     if (system_state_get_registers(regs) != 0) {
-        // If we cannot obtain registers, return empty array
+        // Si no podemos obtener los registros, devolver un arreglo vacío
         offset += snprintf(buf + offset, sizeof(buf) - offset, "{\"registers\":[]}");
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, buf, offset);
@@ -293,8 +310,78 @@ static esp_err_t http_server_get_programmed_handler(httpd_req_t *req)
     httpd_resp_send(req, buf, offset);
     return ESP_OK;
 }
+
 /*******************************************************
- * STATIC FILE HANDLERS (HTML/JS/CSS)
+ * Manejador de configuración WiFi
+ ********************************************************/
+
+/**
+ * @brief Manejador HTTP para actualizar credenciales WiFi STA
+ *
+ * Recibe SSID y contraseña en JSON, las guarda en NVS y envía un mensaje
+ * a la cola WiFi para reconectar con las nuevas credenciales.
+ *
+ * @param req Solicitud HTTP del servidor
+ * @return ESP_OK si se procesó correctamente
+ */
+static esp_err_t http_server_save_wifi_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "/saveWiFi requested");
+
+    char buf[256];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) {
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"No data received\"}", 52);
+        return ESP_FAIL;
+    }
+
+    buf[len] = '\0';
+    cJSON* root = cJSON_ParseWithLength(buf, len);
+    if (!root) {
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}", 47);
+        return ESP_FAIL;
+    }
+
+    cJSON* ssid = cJSON_GetObjectItem(root, "ssid");
+    cJSON* password = cJSON_GetObjectItem(root, "password");
+
+    if (!ssid || !password || ssid->type != cJSON_String || password->type != cJSON_String) {
+        cJSON_Delete(root);
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Missing SSID or password\"}", 60);
+        return ESP_FAIL;
+    }
+
+    // Validar longitudes
+    if (strlen(ssid->valuestring) > MAX_SSID_LENGTH || strlen(password->valuestring) > MAX_PASSWORD_LENGTH) {
+        cJSON_Delete(root);
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"SSID or password too long\"}", 63);
+        return ESP_FAIL;
+    }
+
+    // Guardar en NVS
+    int result = nvs_config_save_wifi_credentials(ssid->valuestring, password->valuestring);
+    if (result != 0) {
+        cJSON_Delete(root);
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Failed to save credentials\"}", 63);
+        return ESP_FAIL;
+    }
+
+    // Enviar mensaje a la cola WiFi para aplicar los nuevos cambios
+    BaseType_t queue_result = wifi_app_send_message(WIFI_APP_MSG_LOAD_SAVED_CREDENTIALS);
+
+    if (queue_result == pdTRUE) {
+        ESP_LOGI(TAG, "WiFi credentials updated: SSID=%s", ssid->valuestring);
+        httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"WiFi credentials saved\"}", 59);
+    } else {
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Failed to send WiFi update message\"}", 71);
+    }
+
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+/*******************************************************
+ * Manejadores de archivos estáticos (HTML/JS/CSS)
  ********************************************************/
 
 static esp_err_t http_server_index_html_handler(httpd_req_t *req)
@@ -338,9 +425,19 @@ static esp_err_t http_server_favicon_ico_handler(httpd_req_t *req)
 }
 
 /*******************************************************
- * OTA UPDATE HANDLER
+ * Manejador de actualización OTA
  ********************************************************/
 
+/**
+ * @brief Manejador HTTP para actualización del firmware OTA
+ *
+ * Recibe el binario del firmware desde la solicitud HTTP, lo escribe en la
+ * partición de actualización y envía un mensaje a la tarea monitor indicando
+ * éxito o fallo.
+ *
+ * @param req Solicitud HTTP del servidor
+ * @return ESP_OK siempre (el estado real se comunica vía cola de monitor)
+ */
 esp_err_t http_server_OTA_update_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "OTA update requested");
@@ -393,12 +490,21 @@ esp_err_t http_server_OTA_update_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Manejador HTTP para consultar el estado de la actualización OTA
+ *
+ * Devuelve en JSON el estado actual de la actualización OTA, la hora de
+ * compilación y la fecha de compilación del firmware.
+ *
+ * @param req Solicitud HTTP del servidor
+ * @return ESP_OK si se envió la respuesta correctamente
+ */
 esp_err_t http_server_OTA_status_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "OTAstatus requested");
 
     char json[100];
-    // Read OTA status from centralized queue (if available)
+    /* Leer el estado OTA de la cola centralizada (si está disponible) */
     int fw_update_status = OTA_UPDATE_PENDING;
     QueueHandle_t status_q = queues_get_http_status_queue();
     if (status_q != NULL) {
@@ -415,19 +521,28 @@ esp_err_t http_server_OTA_status_handler(httpd_req_t *req)
 }
 
 /*******************************************************
- * HTTP SERVER MONITOR TASK
+ * Tarea monitor del servidor HTTP
  ********************************************************/
 
+/**
+ * @brief Tarea monitor que gestiona el ciclo de vida del servidor HTTP
+ *
+ * Esta tarea crea, inicia y detiene el servidor HTTP según los mensajes
+ * recibidos en la cola del monitor. Mantiene estado local sobre la instancia
+ * del servidor y el estado de actualización OTA.
+ *
+ * @param parameter No utilizado
+ */
 void http_server_monitor(void *parameter)
 {
-    // Local handles and state for the monitor task
+    /* Manejadores y estado locales de la tarea monitor */
     http_server_queue_message_t msg;
     QueueHandle_t monitor_q = queues_get_http_monitor_queue();
     QueueHandle_t status_q = queues_get_http_status_queue();
     httpd_handle_t http_server_handle = NULL;
     int fw_update_status_local = OTA_UPDATE_PENDING;
 
-    // Initialize status queue with default
+    // Inicializar la cola de estado con el valor por defecto
     if (status_q != NULL) {
         xQueueOverwrite(status_q, &fw_update_status_local);
     }
@@ -502,6 +617,7 @@ static httpd_handle_t http_server_configure(void)
         httpd_register_uri_handler(handle, &(httpd_uri_t){"/saveAuto", HTTP_POST, http_server_save_auto_handler, NULL});
         httpd_register_uri_handler(handle, &(httpd_uri_t){"/saveProgrammed", HTTP_POST, http_server_save_programmed_handler, NULL});
         httpd_register_uri_handler(handle, &(httpd_uri_t){"/getProgrammed", HTTP_GET, http_server_get_programmed_handler, NULL});
+        httpd_register_uri_handler(handle, &(httpd_uri_t){"/saveWiFi", HTTP_POST, http_server_save_wifi_handler, NULL});
 
         // OTA routes
         httpd_register_uri_handler(handle, &(httpd_uri_t){"/OTAupdate", HTTP_POST, http_server_OTA_update_handler, NULL});
@@ -521,9 +637,15 @@ static httpd_handle_t http_server_configure(void)
  * START / STOP HTTP SERVER
  ********************************************************/
 
+/**
+ * @brief Inicia el servidor HTTP
+ *
+ * Envía un mensaje a la tarea monitor solicitando que inicie el servidor HTTP
+ * si aún no está en ejecución.
+ */
 void http_server_start(void)
 {
-    // Request monitor task to start the HTTP server
+    /* Solicitar a la tarea monitor que inicie el servidor HTTP */
     QueueHandle_t monitor_q = queues_get_http_monitor_queue();
     if (monitor_q != NULL) {
         http_server_queue_message_t msg = { .msgID = HTTP_MSG_START_SERVER };
@@ -531,14 +653,25 @@ void http_server_start(void)
     }
 }
 
+/**
+ * @brief Inicializa la cola del monitor del servidor HTTP
+ *
+ * Esta función se conserva para mantener compatibilidad de API.
+ * La cola del monitor se crea centralmente en `queues_init`.
+ */
 void http_server_init_monitor_queue(void)
 {
-    // Monitor queue is created centrally in `queues_init`; nothing to do here.
+    /* La cola de monitor se crea centralmente en `queues_init`; nada que hacer aquí. */
 }
 
+/**
+ * @brief Detiene el servidor HTTP
+ *
+ * Envía un mensaje a la tarea monitor solicitando que detenga el servidor HTTP.
+ */
 void http_server_stop(void)
 {
-    // Ask monitor to stop the server
+    /* Solicitar al monitor que detenga el servidor */
     QueueHandle_t monitor_q = queues_get_http_monitor_queue();
     if (monitor_q != NULL) {
         http_server_queue_message_t msg = { .msgID = HTTP_MSG_STOP_SERVER };
@@ -546,6 +679,15 @@ void http_server_stop(void)
     }
 }
 
+/**
+ * @brief Envía un mensaje a la tarea monitor del servidor HTTP
+ *
+ * Encapsula un mensaje de tipo `http_server_message_e` en una estructura
+ * y lo envía a la cola del monitor.
+ *
+ * @param msgID Identificador del mensaje (HTTP_MSG_*)
+ * @return pdTRUE si el mensaje se envió correctamente; pdFALSE en caso de error
+ */
 BaseType_t http_server_monitor_send_message(http_server_message_e msgID)
 {
     QueueHandle_t monitor_q = queues_get_http_monitor_queue();
@@ -554,12 +696,28 @@ BaseType_t http_server_monitor_send_message(http_server_message_e msgID)
     return xQueueSend(monitor_q, &msg, portMAX_DELAY);
 }
 
+/**
+ * @brief Función callback para reiniciar el sistema después de actualización OTA
+ *
+ * Se ejecuta cuando la actualización del firmware se ha completado exitosamente.
+ * Reinicia el ESP32 para que el nuevo firmware comience a ejecutarse.
+ *
+ * @param arg No utilizado
+ */
 void http_server_fw_update_reset_callback(void *arg)
 {
     esp_restart();
 }
 
+/**
+ * @brief Establece el manejador de la tarea monitor del servidor HTTP
+ *
+ * Esta función se conserva para mantener compatibilidad de API. El monitor
+ * no almacena un manejador de tarea global; el parámetro se ignora.
+ *
+ * @param handle Manejador de tarea del monitor (no utilizado)
+ */
 void http_server_set_monitor_task_handle(TaskHandle_t handle)
 {
-    (void)handle; // monitor task handle not stored; monitor runs with local state
+    (void)handle; /* el manejador de tarea del monitor no se almacena; el monitor usa estado local */
 }

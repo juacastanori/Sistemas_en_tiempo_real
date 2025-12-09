@@ -1,8 +1,8 @@
 /*
  * system_state.h
  *
- * System state management and fan control logic
- * This module reads from queues and implements the control logic
+ * Gestión del estado del sistema y lógica de control del ventilador
+ * Este módulo lee desde colas e implementa la lógica de control
  */
 
 #ifndef MAIN_SYSTEM_STATE_H_
@@ -12,21 +12,21 @@
 #include "http_server.h"
 
 /* ============================================================
- *          SYSTEM STATE TASK (Fan Control Logic)
+ *          TAREA DE ESTADO DEL SISTEMA (Lógica de ventilador)
  * ============================================================*/
 
 /**
- * @brief Main system control task
- * Runs the fan control logic every 500ms
- * - Reads temperature, PIR, and configuration
- * - Calculates PWM based on mode
- * - Sends PWM to fan, updates system state
+ * @brief Tarea principal de control del sistema
+ * Ejecuta la lógica del ventilador cada 500 ms
+ * - Lee temperatura, PIR y configuración
+ * - Calcula el PWM según el modo
+ * - Envía el PWM al ventilador y actualiza el estado del sistema
  */
 void system_control_task(void *pvParameters);
 
 /**
- * @brief Copy the 3 programmed registers into caller buffer
- * Returns 0 on success
+ * @brief Copia los 3 registros programados en el buffer del llamador
+ * @return 0 en éxito
  */
 int system_state_get_registers(scheduled_register_t out[3]);
 

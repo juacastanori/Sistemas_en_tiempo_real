@@ -1,3 +1,12 @@
+/*
+ * fan_control.c
+ *
+ * Hardware abstraction for the fan PWM using LEDC. Exposes simple
+ * initialization and set/get APIs. The module deliberately does not
+ * keep internal mutable state; the authoritative PWM value is provided
+ * by the `system_state` module and read via the system state queue.
+ */
+
 #include "fan_control.h"
 #include "config_app.h"
 #include "driver/ledc.h"
@@ -6,14 +15,14 @@
 
 static const char *TAG = "FAN_CONTROL";
 
-// No module-level PWM state; system_state is the source of truth.
+/* No hay estado de PWM a nivel de módulo; system_state es la fuente de verdad. */
 
 /**
  * @brief Inicializa el controlador del ventilador
  */
 void fan_control_init(void)
 {
-    ESP_LOGI(TAG, "Inicializando control del ventilador (PWM) en GPIO %d", FAN_PWM_GPIO);
+    ESP_LOGI(TAG, "Starting PWM in GPIO %d", FAN_PWM_GPIO);
 
     // --- Configuración del Timer LEDC ---
     ledc_timer_config_t ledc_timer = {
@@ -25,7 +34,7 @@ void fan_control_init(void)
     };
 
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
-    ESP_LOGI(TAG, "Timer LEDC configurado: frecuencia=%d Hz", FAN_LEDC_FREQUENCY);
+    ESP_LOGI(TAG, "LEDC timer configured: frequency=%d Hz", FAN_LEDC_FREQUENCY);
 
     // --- Configuración del Canal LEDC ---
     ledc_channel_config_t ledc_channel = {
@@ -39,9 +48,9 @@ void fan_control_init(void)
     };
 
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
-    ESP_LOGI(TAG, "Canal LEDC configurado en GPIO %d", FAN_PWM_GPIO);
+    ESP_LOGI(TAG, "LEDC channel configured on GPIO %d", FAN_PWM_GPIO);
 
-    ESP_LOGI(TAG, "Fan control inicializado correctamente");
+    ESP_LOGI(TAG, "Fan control initialized successfully");
 }
 
 /**
@@ -63,8 +72,8 @@ void fan_control_set_pwm(int pwm_percent)
     // Aplicar el cambio (es necesario llamar a ledc_update_duty)
     ESP_ERROR_CHECK(ledc_update_duty(FAN_LEDC_MODE, FAN_LEDC_CHANNEL));
 
-    (void)pwm_percent; // current PWM tracked centrally by system_state
-    ESP_LOGI(TAG, "PWM establecido a %d%% (duty=%lu)", pwm_percent, duty);
+    (void)pwm_percent; // PWM actual ya usado arriba, evitar advertencia si no se usa
+    ESP_LOGI(TAG, "PWM: %d%% (duty=%lu)", pwm_percent, duty);
 }
 
 /**
@@ -72,7 +81,7 @@ void fan_control_set_pwm(int pwm_percent)
  */
 int fan_control_get_pwm(void)
 {
-    // Read latest system state from state queue
+    // Leer el PWM actual desde la cola de estado del sistema
     QueueHandle_t state_q = queues_get_system_state_queue();
     if (state_q == NULL) return 0;
     system_state_t st;

@@ -6,34 +6,27 @@
 
 /**
  * @brief Inicializa el sensor PIR (GPIO).
- * - Configura el GPIO como entrada con pull-down
- * - Crea la tarea de lectura del PIR
- * - El resultado se almacena en una variable global que se expone a http_server.c
+ * - Configura el GPIO como entrada y ajusta pull según la polaridad
+ * - Crea la tarea que procesa eventos del PIR
+ * - Publica el estado normalizado en la cola central del PIR
  */
 void pir_sensor_init(void);
 
 /**
- * @brief Task function that processes PIR events (debounce, normalization).
- * Start this task from `app_main` with xTaskCreate().
+ * @brief Función de tarea que procesa eventos del PIR (debounce y normalización).
+ * Iniciar esta tarea desde `app_main` con `xTaskCreate()`.
  */
 void pir_event_task(void *pvParameters);
 
 /**
- * @brief Obtiene el estado actual del PIR (1 = presencia detectada, 0 = no presencia).
- * @return int 1 si hay presencia, 0 si no.
- */
-// PIR state is published to the central PIR queue; consumers should read from queues_get_pir_queue().
-// Legacy getter removed to avoid global state.
-
-/**
  * @brief Reinicia el contador de decaimiento del PIR (timeout).
- * Se usa si queremos implementar un timeout de presencia.
+ * Utilizar si se implementa un timeout de presencia.
  */
 void pir_sensor_reset_timeout(void);
 
 /**
  * @brief Indica si el PIR está configurado como activo-bajo.
- * @return true si PIR es activo-bajo (LEVEL=0 -> presencia), false si activo-alto.
+ * @return true si el PIR es activo-bajo (LEVEL=0 -> presencia), false si es activo-alto.
  */
 bool pir_sensor_is_active_low(void);
 

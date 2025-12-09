@@ -1,7 +1,7 @@
 /*
  * queues.c
  *
- * Queue and semaphore initialization and management
+ * Inicialización y gestión de colas y semáforos
  */
 
 #include "queues.h"
@@ -10,75 +10,75 @@
 
 static const char TAG[] = "QUEUES";
 
-// Queue handles
+// Handles de las colas
 static QueueHandle_t config_update_queue = NULL;      // HTTP -> Config
-static QueueHandle_t system_state_queue = NULL;       // System -> HTTP/Display
-static QueueHandle_t fan_signal_queue = NULL;         // System -> Fan
-static QueueHandle_t temperature_queue = NULL;        // Thermistor -> System
-static QueueHandle_t pir_state_queue = NULL;         // PIR -> System
+static QueueHandle_t system_state_queue = NULL;       // Sistema -> HTTP/Visualización
+static QueueHandle_t fan_signal_queue = NULL;         // Sistema -> Ventilador
+static QueueHandle_t temperature_queue = NULL;        // Termistor -> Sistema
+static QueueHandle_t pir_state_queue = NULL;         // PIR -> Sistema
 
-// HTTP server monitor queue and status queue
-static QueueHandle_t http_server_monitor_queue = NULL; // http server monitor messages
-static QueueHandle_t http_server_status_queue = NULL; // int fw_update_status (one int)
+// Cola del monitor del servidor HTTP y cola de estado
+static QueueHandle_t http_server_monitor_queue = NULL; // mensajes del monitor HTTP
+static QueueHandle_t http_server_status_queue = NULL; // int fw_update_status (un int)
 
-// Mutex for configuration access
+// Mutex para acceso a configuración
 static SemaphoreHandle_t config_mutex = NULL;
 
 /**
- * @brief Initialize all queues and semaphores
+ * @brief Inicializa todas las colas y semáforos
  */
 int queues_init(void)
 {
-    // Config update queue (HTTP server sends config changes)
+    // Cola de actualizaciones de configuración (el servidor HTTP envía cambios)
     config_update_queue = xQueueCreate(5, sizeof(config_update_t));
     if (config_update_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create config_update_queue");
         return -1;
     }
 
-    // System state queue (for displaying/monitoring)
+    // Cola de estado del sistema (para mostrar/monitorizar)
     system_state_queue = xQueueCreate(1, sizeof(system_state_t));
     if (system_state_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create system_state_queue");
         return -1;
     }
 
-    // Fan signal queue (PWM commands)
+    // Cola de señales del ventilador (comandos PWM)
     fan_signal_queue = xQueueCreate(1, sizeof(fan_signal_t));
     if (fan_signal_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create fan_signal_queue");
         return -1;
     }
 
-    // Temperature queue (from thermistor)
+    // Cola de temperatura (desde el termistor)
     temperature_queue = xQueueCreate(1, sizeof(float));
     if (temperature_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create temperature_queue");
         return -1;
     }
 
-    // PIR state queue (single latest int)
+    // Cola de estado del PIR (último int)
     pir_state_queue = xQueueCreate(1, sizeof(int));
     if (pir_state_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create pir_state_queue");
         return -1;
     }
 
-    // HTTP server monitor queue (for messages like OTA result, start/stop)
+    // Cola del monitor del servidor HTTP (para mensajes como resultado de OTA, start/stop)
     http_server_monitor_queue = xQueueCreate(5, sizeof(http_server_queue_message_t));
     if (http_server_monitor_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create http_server_monitor_queue");
         return -1;
     }
 
-    // HTTP server status queue (single int)
+    // Cola de estado del servidor HTTP (un int)
     http_server_status_queue = xQueueCreate(1, sizeof(int));
     if (http_server_status_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create http_server_status_queue");
         return -1;
     }
 
-    // Mutex for protecting configuration variables
+    // Mutex para proteger variables de configuración
     config_mutex = xSemaphoreCreateMutex();
     if (config_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create config_mutex");
@@ -90,7 +90,7 @@ int queues_init(void)
 }
 
 /**
- * @brief Deinitialize all queues and semaphores
+ * @brief Desinicializa todas las colas y semáforos
  */
 int queues_deinit(void)
 {
@@ -104,12 +104,12 @@ int queues_deinit(void)
     if (http_server_monitor_queue) vQueueDelete(http_server_monitor_queue);
     if (http_server_status_queue) vQueueDelete(http_server_status_queue);
 
-    ESP_LOGI(TAG, "All queues and semaphores deinitialized");
+    ESP_LOGI(TAG, "All queues and semaphores deinitialized successfully");
     return 0;
 }
 
 /**
- * @brief Get queue handles (for other modules)
+ * @brief Obtener handles de las colas (para otros módulos)
  */
 QueueHandle_t queues_get_config_update_queue(void)
 {

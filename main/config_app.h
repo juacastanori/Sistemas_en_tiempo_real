@@ -18,7 +18,7 @@
 #define FAN_LEDC_MODE           LEDC_LOW_SPEED_MODE
 #define FAN_LEDC_CHANNEL        LEDC_CHANNEL_0
 #define FAN_LEDC_FREQUENCY      5000            // 5 kHz - frecuencia PWM recomendada para motores DC
-#define FAN_LEDC_RESOLUTION     LEDC_TIMER_10_BIT // 10-bit resolution (0-1023, pero usaremos 0-100%)
+#define FAN_LEDC_RESOLUTION     LEDC_TIMER_10_BIT // 10-bit resolution
 
 // --- ADC para Termistor ---
 #define EXAMPLE_ADC1_CHAN_TERM  ADC_CHANNEL_0 
@@ -38,6 +38,6 @@
 
 // PIR debounce (ms) y prioridad de la tarea que procesa eventos ISR
 #define PIR_DEBOUNCE_MS         200             // Debounce para evitar rebotes y ráfagas
-#define PIR_ISR_TASK_PRIO       5               // Prioridad de la tarea de procesamiento (no muy alta)
+#define PIR_ISR_TASK_PRIO       6               // Prioridad de la tarea de procesamiento (alta, para detectar eventos rápidamente)
 
 #endif // CONFIG_APP_H

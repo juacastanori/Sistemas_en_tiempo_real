@@ -1,8 +1,6 @@
 /*
  * http_server.h
- *
- * Created on: Oct 20, 2021
- * Author: kjagu
+ * Definiciones del servidor HTTP y API de la tarea monitor.
  */
 
 #ifndef MAIN_HTTP_SERVER_H_
@@ -10,13 +8,13 @@
 #include "esp_http_server.h"
 #include "esp_err.h"
 
-// OTA states
+// Estados de OTA
 #define OTA_UPDATE_PENDING        0
 #define OTA_UPDATE_SUCCESSFUL     1
 #define OTA_UPDATE_FAILED        -1
 
 /**
- * Messages for the HTTP monitor
+ * Mensajes para el monitor HTTP
  */
 typedef enum http_server_message
 {
@@ -31,7 +29,7 @@ typedef enum http_server_message
 } http_server_message_e;
 
 /**
- * Structure for the message queue
+ * Estructura para la cola de mensajes
  */
 typedef struct http_server_queue_message
 {
@@ -40,7 +38,7 @@ typedef struct http_server_queue_message
 } http_server_queue_message_t;
 
 /* ============================================================
- *      PROGRAM STRUCTURES USED BY WEB SERVER
+ *      ESTRUCTURAS DE PROGRAMA UTILIZADAS POR EL SERVIDOR WEB
  * ============================================================*/
 typedef struct {
     int active;
@@ -52,46 +50,46 @@ typedef struct {
 } scheduled_register_t;
 
 /**
- * Array of the 3 programmed registers (access via system_state API)
+ * Array de los 3 registros programados (acceso vía API de system_state)
  */
 
 /* ============================================================
- *            PUBLIC HANDLERS USED IN http_server.c
+ *            MANEJADORES PÚBLICOS UTILIZADOS EN http_server.c
  * ============================================================*/
 
 /**
- * Sends a message to the queue
+ * @brief Envía un mensaje a la cola
  */
 BaseType_t http_server_monitor_send_message(http_server_message_e msgID);
 
 /**
- * Starts the HTTP server.
+ * @brief Inicia el servidor HTTP.
  */
 void http_server_start(void);
 
 /**
- * @brief Initialize the internal monitor queue for the HTTP server.
- * Call this from `app_main` before creating the `http_server_monitor` task.
+ * @brief Inicializa la cola interna del monitor para el servidor HTTP.
+ * Llamar desde `app_main` antes de crear la tarea `http_server_monitor`.
  */
 void http_server_init_monitor_queue(void);
 
 /**
- * @brief The HTTP server monitor task function (create this from main).
+ * @brief Función de tarea del monitor del servidor HTTP (crear desde main).
  */
 void http_server_monitor(void *parameter);
 
 /**
- * @brief Set the internal monitor task handle (call from main after creating task).
+ * @brief Establece el handle de la tarea monitor interna (llamar desde main después de crear la tarea).
  */
 void http_server_set_monitor_task_handle(TaskHandle_t handle);
 
 /**
- * Stops the HTTP server.
+ * @brief Detiene el servidor HTTP.
  */
 void http_server_stop(void);
 
 /**
- * Timer callback executed after a successful OTA update.
+ * @brief Callback del timer ejecutado después de una actualización de firmware exitosa.
  */
 void http_server_fw_update_reset_callback(void *arg);
 

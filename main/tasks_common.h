@@ -1,8 +1,6 @@
 /*
  * tasks_common.h
- *
- *  Created on: Oct 17, 2021
- *      Author: kjagu
+ * Tamaños y prioridades comunes de las tareas
  */
 
 #ifndef MAIN_TASKS_COMMON_H_

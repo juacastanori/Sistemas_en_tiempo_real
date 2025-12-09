@@ -255,6 +255,44 @@
                         </ul>
                     </div>
                 </div>
+
+                <!-- WiFi Configuration Section -->
+                <div class="config-section" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                    <h2 class="panel-title">
+                        <span class="icon">📡</span> Configuración WiFi
+                    </h2>
+                    <p class="section-description">Actualiza las credenciales de la red WiFi STA</p>
+                    
+                    <div class="wifi-config-container">
+                        <div class="control-group">
+                            <label for="wifiSSID">Red WiFi (SSID)</label>
+                            <input type="text" id="wifiSSID" class="input-field" placeholder="Nombre de la red WiFi" maxlength="32">
+                            <small class="input-hint">Máximo 32 caracteres</small>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="wifiPassword">Contraseña WiFi</label>
+                            <input type="password" id="wifiPassword" class="input-field" placeholder="Contraseña de la red" maxlength="64">
+                            <small class="input-hint">Máximo 64 caracteres</small>
+                        </div>
+
+                        <button class="btn btn-primary" id="btnSaveWiFi">
+                            <span class="btn-icon">💾</span> Guardar Credenciales WiFi
+                        </button>
+
+                        <div class="feedback-message" id="feedbackWiFi"></div>
+
+                        <div class="wifi-info">
+                            <p><strong>ℹ️ Información:</strong></p>
+                            <ul>
+                                <li>Las credenciales se guardarán en la memoria flash del dispositivo</li>
+                                <li>El dispositivo intentará reconectar automáticamente con la nueva red</li>
+                                <li>La conexión puede tomar varios segundos</li>
+                                <li>Si hay problemas, el dispositivo mantendrá el Punto de Acceso (AP) activo</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </section>
         </main>
 

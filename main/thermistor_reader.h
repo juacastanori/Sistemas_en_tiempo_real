@@ -6,15 +6,15 @@
 
 /**
  * @brief Inicializa el hardware ADC, la cola de temperatura, y la tarea de lectura del termistor.
- * Debe llamarse desde app_main.
+ * Debe llamarse desde `app_main`.
+ * Retorna un puntero opaco a un contexto que debe pasarse como `pvParameters`
+ * a `thermistor_read_task` cuando se crea la tarea.
  */
-// Initialize thermistor hardware. Returns an opaque context pointer that
-// must be passed as `pvParameters` to `thermistor_read_task` when creating the task.
 void *thermistor_init(void);
 
 /**
- * @brief Task function that reads the thermistor and writes temperature float to the temperature queue.
- * This function should be started with xTaskCreate() from `app_main`.
+ * @brief Función de tarea que lee el termistor y escribe la temperatura (float) en la cola central.
+ * Esta función debe iniciarse con `xTaskCreate()` desde `app_main`.
  */
 void thermistor_read_task(void *pvParameters);
 

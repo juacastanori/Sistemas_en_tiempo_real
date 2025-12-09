@@ -1,109 +1,130 @@
 /*
  * nvs_config.h
  *
- * Non-Volatile Storage (Flash) configuration module
- * Handles persistent storage and retrieval of system configuration
- * (Manual PWM, Automatic Tmin/Tmax, Programmed Registers)
+ * Módulo de configuración en almacenamiento no volátil (Flash)
+ * Gestiona el guardado y la recuperación persistente de la
+ * configuración del sistema
+ * (PWM Manual, Tmin/Tmax Automático, Registros Programados)
  */
 
 #ifndef MAIN_NVS_CONFIG_H_
 #define MAIN_NVS_CONFIG_H_
 
 #include <stdint.h>
-#include "http_server.h"  // For scheduled_register_t
+#include "http_server.h"  // Para scheduled_register_t
 
 /**
- * @brief Initialize NVS (flash storage)
- * Call this once at startup before any read/write operations
- * @return 0 on success, -1 on error
+ * @brief Inicializa NVS (almacenamiento Flash)
+ * Llamar una vez al inicio antes de realizar operaciones de lectura/escritura
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_init(void);
 
 /**
- * @brief Deinitialize NVS
- * @return 0 on success, -1 on error
+ * @brief Desinicializa NVS
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_deinit(void);
 
 /* ============================================================
- *           MANUAL MODE: Store and Load PWM
+ *           MODO MANUAL: Guardar y cargar PWM
  * ============================================================*/
 
 /**
- * @brief Save manual mode PWM value to flash
- * @param pwm_value PWM percentage (0-100)
- * @return 0 on success, -1 on error
+ * @brief Guarda en flash el valor de PWM para el modo manual
+ * @param pwm_value Porcentaje de PWM (0-100)
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_save_manual_pwm(int pwm_value);
 
 /**
- * @brief Load manual mode PWM from flash
- * @param pwm_value Pointer to store the loaded value
- * @return 0 on success, -1 on error or not found
+ * @brief Carga desde flash el valor de PWM para el modo manual
+ * @param pwm_value Puntero donde almacenar el valor cargado
+ * @return 0 en éxito, -1 en error o si no se encuentra
  */
 int nvs_config_load_manual_pwm(int *pwm_value);
 
 /* ============================================================
- *        AUTOMATIC MODE: Store and Load Tmin/Tmax
+ *        MODO AUTOMÁTICO: Guardar y cargar Tmin/Tmax
  * ============================================================*/
 
 /**
- * @brief Save automatic mode temperature range (Tmin, Tmax) to flash
- * @param tmin Minimum temperature
- * @param tmax Maximum temperature
- * @return 0 on success, -1 on error
+ * @brief Guarda en flash el rango de temperatura del modo automático (Tmin, Tmax)
+ * @param tmin Temperatura mínima
+ * @param tmax Temperatura máxima
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_save_auto_temps(float tmin, float tmax);
 
 /**
- * @brief Load automatic mode temperatures from flash
- * @param tmin Pointer to store Tmin
- * @param tmax Pointer to store Tmax
- * @return 0 on success, -1 on error or not found
+ * @brief Carga desde flash las temperaturas del modo automático
+ * @param tmin Puntero donde almacenar Tmin
+ * @param tmax Puntero donde almacenar Tmax
+ * @return 0 en éxito, -1 en error o si no se encuentra
  */
 int nvs_config_load_auto_temps(float *tmin, float *tmax);
 
 /* ============================================================
- *      PROGRAMMED MODE: Store and Load Registers
+ *      MODO PROGRAMADO: Guardar y cargar registros
  * ============================================================*/
 
 /**
- * @brief Save one programmed register (0-2) to flash
- * @param index Register index (0, 1, or 2)
- * @param reg Pointer to scheduled_register_t structure
- * @return 0 on success, -1 on error
+ * @brief Guarda un registro programado (índice 0-2) en flash
+ * @param index Índice del registro (0, 1 o 2)
+ * @param reg Puntero a la estructura scheduled_register_t
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_save_register(int index, const scheduled_register_t *reg);
 
 /**
- * @brief Load one programmed register from flash
- * @param index Register index (0, 1, or 2)
- * @param reg Pointer to store the loaded register
- * @return 0 on success, -1 on error or not found
+ * @brief Carga un registro programado desde flash
+ * @param index Índice del registro (0, 1 o 2)
+ * @param reg Puntero donde almacenar el registro cargado
+ * @return 0 en éxito, -1 en error o si no se encuentra
  */
 int nvs_config_load_register(int index, scheduled_register_t *reg);
 
 /**
- * @brief Save all 3 programmed registers at once
- * @param registers Pointer to array of 3 scheduled_register_t structures
- * @return 0 on success, -1 on error
+ * @brief Guarda los 3 registros programados a la vez
+ * @param registers Puntero al array de 3 estructuras scheduled_register_t
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_save_all_registers(const scheduled_register_t *registers);
 
 /**
- * @brief Load all 3 programmed registers at once
- * @param registers Pointer to array that will store all 3 registers
- * @return 0 on success, -1 on error
+ * @brief Carga los 3 registros programados a la vez
+ * @param registers Puntero al array donde se almacenarán los 3 registros
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_load_all_registers(scheduled_register_t *registers);
 
 /* ============================================================
- *           HELPER: Clear all configurations
+ *        CREDENCIALES WiFi STA: Guardar y cargar SSID/Password
  * ============================================================*/
 
 /**
- * @brief Erase all stored configurations (reset to defaults)
- * @return 0 on success, -1 on error
+ * @brief Guarda las credenciales WiFi STA (SSID y contraseña) en flash
+ * @param ssid SSID de la red WiFi a conectarse (máx 32 caracteres)
+ * @param password Contraseña de la red WiFi (máx 64 caracteres)
+ * @return 0 en éxito, -1 en error
+ */
+int nvs_config_save_wifi_credentials(const char *ssid, const char *password);
+
+/**
+ * @brief Carga las credenciales WiFi STA desde flash
+ * @param ssid Buffer donde almacenar el SSID cargado (debe tener al menos 33 bytes)
+ * @param password Buffer donde almacenar la contraseña (debe tener al menos 65 bytes)
+ * @return 0 en éxito, -1 en error o si no se encuentran credenciales guardadas
+ */
+int nvs_config_load_wifi_credentials(char *ssid, char *password);
+
+/* ============================================================
+ *           AYUDA: Borrar todas las configuraciones
+ * ============================================================*/
+
+/**
+ * @brief Borra todas las configuraciones almacenadas (restablece a valores por defecto)
+ * @return 0 en éxito, -1 en error
  */
 int nvs_config_erase_all(void);
 

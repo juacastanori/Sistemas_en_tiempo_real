@@ -1,6 +1,10 @@
-/**
- * Application entry point.
- * All tasks are created here (thermistor, PIR, fan control, WiFi)
+/*
+ * main.c
+ *
+ * Punto de entrada de la aplicación. Este fichero centraliza la creación de
+ * tareas del sistema e inicializa los módulos (NVS, colas, periféricos).
+ * Todas las llamadas a `xTaskCreate` se realizan aquí para mantener la
+ * secuencia de arranque en un único lugar.
  */
 
 #include "nvs_flash.h"
@@ -8,7 +12,6 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "queues.h"
 #include "system_state.h"
 #include "wifi_app.h"
@@ -26,36 +29,41 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "Starting application...");
 
-    // Initialize NVS (flash storage)
+    /**
+     * @brief Inicializa NVS (almacenamiento flash)
+     */
     if (nvs_config_init() != 0) {
         ESP_LOGE(TAG, "NVS config initialization failed");
     }
 
-    // Initialize inter-task communication (queues and semaphores)
+    /**
+     * @brief Inicializa la comunicación inter-tareas (colas y semáforos)
+     */
     if (queues_init() != 0) {
         ESP_LOGE(TAG, "Queues initialization failed");
         return;
     }
 
-    // Initialize hardware peripherals
-    void *therm_ctx = thermistor_init();  // Temperature sensor context (pass to task)
-    pir_sensor_init();  // PIR motion sensor
-    fan_control_init(); // Fan PWM control
+    /**
+     * @brief Inicializa periféricos y contextos de hardware
+     */
+    void *therm_ctx = thermistor_init();  // Contexto del sensor de temperatura (pasar a la tarea)
+    pir_sensor_init();  // Inicializa sensor PIR
+    fan_control_init(); // Inicializa control PWM del ventilador
 
     ESP_LOGI(TAG, "All peripherals initialized");
 
-    // ========== CREATE ALL SYSTEM TASKS ==========
+    // ========== CREACIÓN CENTRALIZADA DE TAREAS ==========
 
-    // Initialize HTTP server monitor queue (task will be created in main)
+    // Inicializa la cola del monitor del servidor HTTP (la tarea se creará en main)
     http_server_init_monitor_queue();
 
-    // Start module-level initializers that do NOT create tasks
-    // (they prepare peripherals, queues, ISRs, etc.)
-    wifi_app_start(); // creates wifi_app queue but NOT the task
+    // Inicializadores de módulo que NO crean tareas (preparan periféricos, colas, ISRs, etc.)
+    wifi_app_start(); // crea la cola del wifi_app, pero no crea la tarea
 
-    // Create tasks from main (centralized responsibility)
+    // Crear tareas desde main (responsabilidad centralizada)
 
-    // Thermistor reader task (pass context returned by thermistor_init)
+    // Tarea lectora del termistor (pasar el contexto retornado por thermistor_init)
     xTaskCreate(
         thermistor_read_task,
         "thermistor_read_task",
@@ -66,7 +74,7 @@ void app_main(void)
     );
     ESP_LOGI(TAG, "Created thermistor_read_task");
 
-    // PIR event task (debounce + state)
+    // Tarea de eventos PIR (debounce + publicación de estado)
     xTaskCreate(
         pir_event_task,
         "pir_event_task",
@@ -77,7 +85,7 @@ void app_main(void)
     );
     ESP_LOGI(TAG, "Created pir_event_task");
 
-    // WiFi app task (pinned)
+    // Tarea de la aplicación WiFi (anclada a core)
     TaskHandle_t wifi_handle = NULL;
     xTaskCreatePinnedToCore(
         wifi_app_task,
@@ -90,7 +98,7 @@ void app_main(void)
     );
     ESP_LOGI(TAG, "Created wifi_app_task");
 
-    // HTTP server monitor task (pinned)
+    // Tarea monitor del servidor HTTP (anclada a core)
     TaskHandle_t http_mon_handle = NULL;
     xTaskCreatePinnedToCore(
         http_server_monitor,
@@ -101,11 +109,11 @@ void app_main(void)
         &http_mon_handle,
         HTTP_SERVER_MONITOR_CORE_ID
     );
-    // Let http_server know about the handle so it can stop the task later
+    /* Informar al servidor HTTP del handle para que pueda detener la tarea si es necesario */
     http_server_set_monitor_task_handle(http_mon_handle);
     ESP_LOGI(TAG, "Created http_server_monitor task");
 
-    // System control task (fan control logic)
+    // Tarea de control del sistema (lógica del ventilador)
     xTaskCreate(
         system_control_task,
         "system_control_task",

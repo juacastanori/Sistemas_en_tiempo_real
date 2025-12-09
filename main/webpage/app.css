@@ -801,6 +801,78 @@ body {
     color: var(--text-secondary);
 }
 
+/* ========== WiFi CONFIGURATION STYLES ========== */
+.wifi-config-container {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+
+.wifi-config-container .control-group {
+    margin-bottom: 1.5rem;
+}
+
+.wifi-config-container label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.wifi-config-container .input-field {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    transition: border-color var(--transition);
+    font-family: inherit;
+}
+
+.wifi-config-container .input-field:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.input-hint {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.wifi-info {
+    background: var(--bg-primary);
+    border-left: 4px solid var(--primary-color);
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    margin-top: 1.5rem;
+}
+
+.wifi-info p {
+    margin: 0 0 0.5rem 0;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.wifi-info ul {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0;
+}
+
+.wifi-info li {
+    margin: 0.25rem 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+#feedbackWiFi {
+    margin-top: 1rem;
+}
+
 /* ========== REFRESH INDICATOR ========== */
 .refresh-indicator {
     display: flex;
