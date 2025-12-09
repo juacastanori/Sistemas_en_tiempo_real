@@ -31,8 +31,8 @@ typedef void (*wifi_connected_event_callback_t)(void);
 #define MAX_CONNECTION_RETRIES          5                       // Número de reintentos de desconexión
 
 // netif object for the Station and Access Point
-extern esp_netif_t* esp_netif_sta;
-extern esp_netif_t* esp_netif_ap;
+// Internals: `esp_netif` handles are file-local to `wifi_app.c`.
+// If external access is required, add accessor functions instead of public globals.
 
 /**
  * Message IDs for the WiFi application task
@@ -70,6 +70,11 @@ BaseType_t wifi_app_send_message(wifi_app_message_e msgID);
  * Starts the WiFi RTOS task
  */
 void wifi_app_start(void);
+
+/**
+ * @brief Task function for the WiFi application. Create this with xTaskCreatePinnedToCore() from `app_main`.
+ */
+void wifi_app_task(void *pvParameters);
 
 /**
  * Gets the wifi configuration

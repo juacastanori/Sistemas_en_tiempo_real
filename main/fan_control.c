@@ -2,11 +2,11 @@
 #include "config_app.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "queues.h"
 
 static const char *TAG = "FAN_CONTROL";
 
-// Variable que almacena el PWM actual
-static int current_pwm = 0;
+// No module-level PWM state; system_state is the source of truth.
 
 /**
  * @brief Inicializa el controlador del ventilador
@@ -41,7 +41,6 @@ void fan_control_init(void)
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     ESP_LOGI(TAG, "Canal LEDC configurado en GPIO %d", FAN_PWM_GPIO);
 
-    current_pwm = 0;
     ESP_LOGI(TAG, "Fan control inicializado correctamente");
 }
 
@@ -64,7 +63,7 @@ void fan_control_set_pwm(int pwm_percent)
     // Aplicar el cambio (es necesario llamar a ledc_update_duty)
     ESP_ERROR_CHECK(ledc_update_duty(FAN_LEDC_MODE, FAN_LEDC_CHANNEL));
 
-    current_pwm = pwm_percent;
+    (void)pwm_percent; // current PWM tracked centrally by system_state
     ESP_LOGI(TAG, "PWM establecido a %d%% (duty=%lu)", pwm_percent, duty);
 }
 
@@ -73,5 +72,12 @@ void fan_control_set_pwm(int pwm_percent)
  */
 int fan_control_get_pwm(void)
 {
-    return current_pwm;
+    // Read latest system state from state queue
+    QueueHandle_t state_q = queues_get_system_state_queue();
+    if (state_q == NULL) return 0;
+    system_state_t st;
+    if (xQueuePeek(state_q, &st, 0) == pdTRUE) {
+        return st.current_pwm;
+    }
+    return 0;
 }

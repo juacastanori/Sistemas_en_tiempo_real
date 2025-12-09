@@ -36,4 +36,8 @@
 #define PIR_READ_INTERVAL_MS    100             // Leer PIR cada 100 ms
 #define FAN_CONTROL_INTERVAL_MS 500             // Actualizar control del fan cada 500 ms
 
+// PIR debounce (ms) y prioridad de la tarea que procesa eventos ISR
+#define PIR_DEBOUNCE_MS         200             // Debounce para evitar rebotes y ráfagas
+#define PIR_ISR_TASK_PRIO       5               // Prioridad de la tarea de procesamiento (no muy alta)
+
 #endif // CONFIG_APP_H

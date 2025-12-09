@@ -1,4 +1,4 @@
-idf_component_register(SRCS "sntp_time_sync.c" "thermistor_reader.c" "pir_sensor.c" "fan_control.c" "main.c" "wifi_app.c" "http_server.c" 
+idf_component_register(SRCS "queues.c" "system_state.c" "nvs_config.c" "sntp_time_sync.c" "thermistor_reader.c" "pir_sensor.c" "fan_control.c" "main.c" "wifi_app.c" "http_server.c" 
                     PRIV_REQUIRES esp_wifi nvs_flash driver esp_http_server esp_timer app_update json mqtt esp_driver_uart lwip esp_netif
 
                     INCLUDE_DIRS "."

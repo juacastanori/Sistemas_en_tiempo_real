@@ -5,20 +5,16 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "queues.h"
 
 static const char *TAG = "PIR_SENSOR";
 
 // Estado lógico del PIR: 1 = presencia, 0 = no presencia
-static int pir_state = 0;
-
-// Cola que expone el estado al resto del sistema (opcional)
-static QueueHandle_t pir_queue_handle = NULL;
-
 // Cola para eventos generados por la ISR (niveles crudos)
 static QueueHandle_t pir_evt_queue = NULL;
 
 // Forward
-static void pir_event_task(void *pvParameters);
+void pir_event_task(void *pvParameters);
 
 static void IRAM_ATTR pir_gpio_isr_handler(void *arg)
 {
@@ -36,7 +32,7 @@ static void IRAM_ATTR pir_gpio_isr_handler(void *arg)
 /**
  * @brief Tarea que procesa eventos del PIR (debounce y normalización de nivel)
  */
-static void pir_event_task(void *pvParameters)
+void pir_event_task(void *pvParameters)
 {
     int raw_level = 0;
     while (1) {
@@ -56,13 +52,13 @@ static void pir_event_task(void *pvParameters)
             int detected = (stable == 1) ? 1 : 0;
 #endif
 
-            pir_state = detected;
-
-            if (pir_queue_handle != NULL) {
-                xQueueOverwrite(pir_queue_handle, &pir_state);
+            // Publish to central PIR queue
+            QueueHandle_t q = queues_get_pir_queue();
+            if (q != NULL) {
+                xQueueOverwrite(q, &detected);
             }
 
-            ESP_LOGI(TAG, "PIR State: %d (raw=%d)", pir_state, stable);
+            ESP_LOGI(TAG, "PIR State published: %d (raw=%d)", detected, stable);
         }
     }
 }
@@ -74,12 +70,6 @@ void pir_sensor_init(void)
 {
     ESP_LOGI(TAG, "Inicializando sensor PIR en GPIO %d (active_low=%d)", PIR_SENSOR_GPIO, PIR_ACTIVE_LOW);
 
-    // Cola para exponer estado a otras tareas
-    pir_queue_handle = xQueueCreate(1, sizeof(int));
-    if (pir_queue_handle == NULL) {
-        ESP_LOGW(TAG, "Failed to create pir_queue_handle");
-    }
-
     // Cola para eventos desde la ISR
     pir_evt_queue = xQueueCreate(10, sizeof(int));
     if (pir_evt_queue == NULL) {
@@ -89,20 +79,24 @@ void pir_sensor_init(void)
 
     // Configurar GPIO del PIR como entrada con interrupciones
     gpio_config_t pir_config = {
-        .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << PIR_SENSOR_GPIO),
         .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
 
-    // Ajustar pull según la polaridad del sensor
+    // Ajustar pull y tipo de interrupción según la polaridad del sensor
 #if PIR_ACTIVE_LOW
+    // Sensor activo cuando el pin baja -> detectar flanco de bajada (FALLING)
     pir_config.pull_up_en = GPIO_PULLUP_ENABLE;    // idle = HIGH
     pir_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    pir_config.intr_type = GPIO_INTR_NEGEDGE;
 #else
+    // Sensor activo cuando el pin sube -> detectar flanco de subida (RISING)
     pir_config.pull_up_en = GPIO_PULLUP_DISABLE;
     pir_config.pull_down_en = GPIO_PULLDOWN_ENABLE; // idle = LOW
+    pir_config.intr_type = GPIO_INTR_POSEDGE;
 #endif
 
     ESP_ERROR_CHECK(gpio_config(&pir_config));
@@ -113,16 +107,10 @@ void pir_sensor_init(void)
     // Registrar el handler para el pin del PIR
     ESP_ERROR_CHECK(gpio_isr_handler_add(PIR_SENSOR_GPIO, pir_gpio_isr_handler, (void *)PIR_SENSOR_GPIO));
 
-    // Crear tarea que procesa los eventos (debounce y actualiza pir_state)
-    xTaskCreate(pir_event_task, "pir_event_task", 2048, NULL, 10, NULL);
-
     ESP_LOGI(TAG, "PIR sensor inicializado correctamente (ISR)");
 }
 
-int pir_sensor_get_state(void)
-{
-    return pir_state;
-}
+// pir_sensor_get_state removed: PIR state is published to the central PIR queue.
 
 void pir_sensor_reset_timeout(void)
 {

@@ -25,6 +25,8 @@ typedef enum http_server_message
     HTTP_MSG_WIFI_CONNECT_FAIL,
     HTTP_MSG_OTA_UPDATE_SUCCESSFUL,
     HTTP_MSG_OTA_UPDATE_FAILED,
+    HTTP_MSG_START_SERVER,
+    HTTP_MSG_STOP_SERVER,
 
 } http_server_message_e;
 
@@ -38,17 +40,8 @@ typedef struct http_server_queue_message
 } http_server_queue_message_t;
 
 /* ============================================================
- *      GLOBAL SYSTEM VARIABLES (USED BY WEB SERVER)
+ *      PROGRAM STRUCTURES USED BY WEB SERVER
  * ============================================================*/
-extern int g_current_mode;
-extern int g_current_pwm;
-extern float g_auto_t_min;
-extern float g_auto_t_max;
-extern int g_pir_state;
-
-/**
- * Programmed schedule register structure
- */
 typedef struct {
     int active;
     uint8_t start_hour, start_min;
@@ -59,9 +52,8 @@ typedef struct {
 } scheduled_register_t;
 
 /**
- * Array of the 3 programmed registers
+ * Array of the 3 programmed registers (access via system_state API)
  */
-extern scheduled_register_t g_registers[3];
 
 /* ============================================================
  *            PUBLIC HANDLERS USED IN http_server.c
@@ -76,6 +68,22 @@ BaseType_t http_server_monitor_send_message(http_server_message_e msgID);
  * Starts the HTTP server.
  */
 void http_server_start(void);
+
+/**
+ * @brief Initialize the internal monitor queue for the HTTP server.
+ * Call this from `app_main` before creating the `http_server_monitor` task.
+ */
+void http_server_init_monitor_queue(void);
+
+/**
+ * @brief The HTTP server monitor task function (create this from main).
+ */
+void http_server_monitor(void *parameter);
+
+/**
+ * @brief Set the internal monitor task handle (call from main after creating task).
+ */
+void http_server_set_monitor_task_handle(TaskHandle_t handle);
 
 /**
  * Stops the HTTP server.

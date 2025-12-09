@@ -13,10 +13,17 @@
 void pir_sensor_init(void);
 
 /**
+ * @brief Task function that processes PIR events (debounce, normalization).
+ * Start this task from `app_main` with xTaskCreate().
+ */
+void pir_event_task(void *pvParameters);
+
+/**
  * @brief Obtiene el estado actual del PIR (1 = presencia detectada, 0 = no presencia).
  * @return int 1 si hay presencia, 0 si no.
  */
-int pir_sensor_get_state(void);
+// PIR state is published to the central PIR queue; consumers should read from queues_get_pir_queue().
+// Legacy getter removed to avoid global state.
 
 /**
  * @brief Reinicia el contador de decaimiento del PIR (timeout).

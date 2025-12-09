@@ -17,10 +17,9 @@ static const char TAG [] = "wifi_app";
 static QueueHandle_t wifi_app_queue_handle;
 
 // Variables para el modo Station (STA)
-static int g_retry_count = 0;
+// retry_count moved to wifi_app_task to avoid file-scope globals
 
-esp_netif_t* esp_netif_sta = NULL;
-esp_netif_t* esp_netif_ap = NULL;
+// esp_netif handles are created per-task and are not global.
 
 /**
  * WiFi application event handler
@@ -56,27 +55,13 @@ static void wifi_app_event_handler(void *arg, esp_event_base_t event_base, int32
                 break;
 
             case WIFI_EVENT_STA_DISCONNECTED:
-                {
-                    wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *)event_data;
-                    ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED. Reason: %d", disconnected->reason);
-                    
-                    // Detener SNTP si estaba activo
-                    sntp_time_sync_stop(); 
-
-                    if (g_retry_count < MAX_CONNECTION_RETRIES)
-                    {
-                        g_retry_count++;
-                        
-                        // IMPORTANTE: esp_wifi_connect() es seguro aquí porque el driver ya inició.
-                        esp_wifi_connect(); 
-                        
-                        ESP_LOGI(TAG, "Reintentando conexión STA... (%d/%d)", g_retry_count, MAX_CONNECTION_RETRIES);
-                    }
-                    else
-                    {
-                        wifi_app_send_message(WIFI_APP_MSG_STA_DISCONNECTED);
-                    }
-                }
+                        {
+                            // Delegate disconnect handling to the wifi_app task (keeps retry state in task)
+                            wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *)event_data;
+                            ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED. Reason: %d", disconnected->reason);
+                            sntp_time_sync_stop();
+                            wifi_app_send_message(WIFI_APP_MSG_STA_DISCONNECTED);
+                        }
                 break;
         }
     }
@@ -84,13 +69,12 @@ static void wifi_app_event_handler(void *arg, esp_event_base_t event_base, int32
     {
         switch (event_id)
         {
-            case IP_EVENT_STA_GOT_IP:
+                case IP_EVENT_STA_GOT_IP:
                 {
                     ip_event_got_ip_t *ip_event = (ip_event_got_ip_t *)event_data;
                     ESP_LOGI(TAG, "IP_EVENT_STA_GOT_IP. IP: " IPSTR, IP2STR(&ip_event->ip_info.ip));
-                    g_retry_count = 0; // Reiniciar contador de reintentos
-                    
-                    // Notificar a la aplicación que tenemos IP (para iniciar HTTP Server y SNTP)
+
+                    // Notificar a la aplicación que tenemos IP (para iniciar HTTP Server and SNTP)
                     wifi_app_send_message(WIFI_APP_MSG_STA_CONNECTED_GOT_IP);
                 }
                 break;
@@ -116,7 +100,7 @@ static void wifi_app_event_handler_init(void)
 /**
  * Initializes the TCP stack and default WiFi configuration.
  */
-static void wifi_app_default_wifi_init(void)
+static void wifi_app_default_wifi_init(esp_netif_t **out_sta, esp_netif_t **out_ap)
 {
     // Initialize the TCP stack
     ESP_ERROR_CHECK(esp_netif_init());
@@ -127,14 +111,14 @@ static void wifi_app_default_wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     
     // Crear interfaces de red para STA y AP
-    esp_netif_sta = esp_netif_create_default_wifi_sta();
-    esp_netif_ap = esp_netif_create_default_wifi_ap();
+    if (out_sta) *out_sta = esp_netif_create_default_wifi_sta();
+    if (out_ap) *out_ap = esp_netif_create_default_wifi_ap();
 }
 
 /**
  * Configures the WiFi access point settings and assigns the static IP to the SoftAP.
  */
-static void wifi_app_soft_ap_config(void)
+static void wifi_app_soft_ap_config(esp_netif_t *esp_netif_ap)
 {
     // SoftAP - WiFi access point configuration
     wifi_config_t ap_config =
@@ -192,21 +176,24 @@ static void wifi_app_sta_config(void)
  * Main task for the WiFi application
  * @param pvParameters parameter which can be passed to the task
  */
-static void wifi_app_task(void *pvParameters)
+void wifi_app_task(void *pvParameters)
 {
     wifi_app_queue_message_t msg;
+    esp_netif_t *esp_netif_sta = NULL;
+    esp_netif_t *esp_netif_ap = NULL;
+    int retry_count = 0;
 
     // 1. Initialize the event handler
     wifi_app_event_handler_init();
 
     // 2. Initialize the TCP/IP stack and WiFi config
-    wifi_app_default_wifi_init();
+    wifi_app_default_wifi_init(&esp_netif_sta, &esp_netif_ap);
     
     // 3. Iniciar SNTP (solo se inicializa)
     sntp_time_sync_init();
 
     // 4. SoftAP config (Configura AP/STA en modo APSTA)
-    wifi_app_soft_ap_config();
+    wifi_app_soft_ap_config(esp_netif_ap);
     
     // 5. STA config (Solo establece la configuración de la red STA)
     wifi_app_sta_config(); 
@@ -242,11 +229,19 @@ static void wifi_app_task(void *pvParameters)
 
                 case WIFI_APP_MSG_STA_CONNECTED_GOT_IP:
                     ESP_LOGI(TAG, "WIFI_APP_MSG_STA_CONNECTED_GOT_IP");
+                    retry_count = 0; // reset retry counter inside task
                     break;
                     
                 case WIFI_APP_MSG_STA_DISCONNECTED:
-                    ESP_LOGI(TAG, "WIFI_APP_MSG_STA_DISCONNECTED. Fallo maximo de reintentos.");
-                    // Manejar desconexión permanente
+                    ESP_LOGI(TAG, "WIFI_APP_MSG_STA_DISCONNECTED received; handling retry in task");
+                    if (retry_count < MAX_CONNECTION_RETRIES) {
+                        retry_count++;
+                        esp_wifi_connect();
+                        ESP_LOGI(TAG, "Reintentando conexión STA... (%d/%d)", retry_count, MAX_CONNECTION_RETRIES);
+                    } else {
+                        ESP_LOGI(TAG, "Fallo máximo de reintentos.");
+                        // Manejar desconexión permanente (could notify UI/log)
+                    }
                     break;
 
                 default:
@@ -259,7 +254,6 @@ static void wifi_app_task(void *pvParameters)
 
 void wifi_app_connect_sta(void)
 {
-    g_retry_count = 0;
     ESP_LOGI(TAG, "Conectando STA (llamada segura)...");
     ESP_ERROR_CHECK(esp_wifi_connect());
 }
@@ -278,11 +272,8 @@ void wifi_app_start(void)
     // Disable default WiFi logging messages
     esp_log_level_set("wifi", ESP_LOG_NONE);
 
-    // Create message queue
+    // Create message queue (task must be created from main)
     wifi_app_queue_handle = xQueueCreate(3, sizeof(wifi_app_queue_message_t));
-
-    // Start the WiFi application task
-    xTaskCreatePinnedToCore(&wifi_app_task, "wifi_app_task", WIFI_APP_TASK_STACK_SIZE, NULL, WIFI_APP_TASK_PRIORITY, NULL, WIFI_APP_TASK_CORE_ID);
 }
 
 // Implementación de funciones dummy (o que requieren lógica NVS) - dejadas así para el ejemplo

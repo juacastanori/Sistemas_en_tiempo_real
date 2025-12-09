@@ -1,4 +1,5 @@
 #include "thermistor_reader.h"
+#include "queues.h"
 #include "config_app.h" // Asumo que esta tiene las constantes (VCC_MV, R_FIXED_OHMS, etc.)
 
 #include <stdio.h>
@@ -15,11 +16,11 @@
 #include "esp_adc/adc_cali_scheme.h"
 
 static const char *TAG = "THERMISTOR";
-// La temperatura global se reemplaza por el handle de la cola.
-static QueueHandle_t temp_queue_handle = NULL; 
 
-static adc_oneshot_unit_handle_t adc1_handle = NULL;
-static adc_cali_handle_t cali_term_handle = NULL;
+typedef struct {
+    adc_oneshot_unit_handle_t adc1_handle;
+    adc_cali_handle_t cali_term_handle;
+} thermistor_ctx_t;
 
 // --- Funciones de Calibracion ADC (se mantienen sin cambios) ---
 
@@ -86,19 +87,21 @@ static void example_adc_calibration_deinit(adc_cali_handle_t handle)
 
 // --- Tarea de lectura del termistor ---
 
-static void thermistor_read_task(void *pvParameters)
+void thermistor_read_task(void *pvParameters)
 {
+    thermistor_ctx_t *ctx = (thermistor_ctx_t *)pvParameters;
     int raw_term;
     int volt_term; // mV
     float temp_c;
+    QueueHandle_t temp_queue_handle = NULL;
 
     while(1) {
         // 1. Leer el ADC del termistor
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, EXAMPLE_ADC1_CHAN_TERM, &raw_term));
+        ESP_ERROR_CHECK(adc_oneshot_read(ctx->adc1_handle, EXAMPLE_ADC1_CHAN_TERM, &raw_term));
         
         // 2. Convertir RAW a Voltaje (mV)
-        if (cali_term_handle) {
-            adc_cali_raw_to_voltage(cali_term_handle, raw_term, &volt_term);
+        if (ctx->cali_term_handle) {
+            adc_cali_raw_to_voltage(ctx->cali_term_handle, raw_term, &volt_term);
         } else {
             volt_term = (int)((float)raw_term * VCC_MV / ADC_MAX_RAW);
         }
@@ -117,11 +120,11 @@ static void thermistor_read_task(void *pvParameters)
         // Convertir a Celsius
         temp_c = temp_k - 273.15f;
 
-        // 4. Enviar la temperatura a la cola (sobrescribiendo el valor anterior)
-        if (temp_queue_handle != NULL) {
-             // Usamos xQueueOverwrite ya que solo nos interesa el valor más reciente
-             xQueueOverwrite(temp_queue_handle, &temp_c); 
-        }
+           // 4. Enviar la temperatura a la cola central (sobrescribiendo el valor anterior)
+           if (temp_queue_handle == NULL) temp_queue_handle = queues_get_temperature_queue();
+           if (temp_queue_handle != NULL) {
+               xQueueOverwrite(temp_queue_handle, &temp_c);
+           }
 
         ESP_LOGI(TAG, "Raw: %d, Volt: %d mV, Temp: %.2f C", raw_term, volt_term, temp_c);
 
@@ -131,39 +134,41 @@ static void thermistor_read_task(void *pvParameters)
 
 // --- Implementación de la Interfaz Pública ---
 
-void thermistor_init(void)
+void *thermistor_init(void)
 {
-    // --- Crear Cola (tamaño 1 para la última lectura float) ---
-    temp_queue_handle = xQueueCreate(1, sizeof(float));
-    if (temp_queue_handle == NULL) {
-        ESP_LOGE(TAG, "Failed to create temp_queue_handle");
-        return;
+    // The temperature queue is created centrally by queues_init(); nothing to do here.
+
+    // Allocate context to hold handles (returned to main so it can pass to the task)
+    thermistor_ctx_t *ctx = calloc(1, sizeof(thermistor_ctx_t));
+    if (!ctx) {
+        ESP_LOGE(TAG, "Failed to allocate thermistor context");
+        return NULL;
     }
 
     // --- ADC1 Init ---
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
     };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &ctx->adc1_handle));
 
     // --- ADC1 Config ---
     adc_oneshot_chan_cfg_t config = {
         .atten = EXAMPLE_ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, EXAMPLE_ADC1_CHAN_TERM, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(ctx->adc1_handle, EXAMPLE_ADC1_CHAN_TERM, &config));
 
     // --- ADC1 Calibration Init ---
-    if (!example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN_TERM, EXAMPLE_ADC_ATTEN, &cali_term_handle)) {
+    if (!example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN_TERM, EXAMPLE_ADC_ATTEN, &ctx->cali_term_handle)) {
         ESP_LOGW(TAG, "Thermistor calibration failed or not supported. Using raw scaling.");
     }
-    
-    // --- Crear Tarea ---
-    xTaskCreate(thermistor_read_task, "thermistor_read_task", 2048, NULL, 5, NULL);
+
+    // Return context; the caller (main) must pass it as pvParameters to the task
+    return ctx;
 }
 
 QueueHandle_t get_temperature_queue_handle(void)
 {
-    // Retorna el handle de la cola para que otras tareas puedan leer de ella
-    return temp_queue_handle;
+    // Retorna la cola central para temperatura
+    return queues_get_temperature_queue();
 }
