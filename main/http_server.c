@@ -63,6 +63,15 @@ static httpd_handle_t http_server_configure(void);
  * Manejador de tiempo SNTP
  ********************************************************/
 
+/**
+ * @brief Handler HTTP que devuelve la hora actual en formato JSON.
+ *
+ * Consulta el módulo SNTP para obtener la hora y devuelve un objeto JSON
+ * con la hora formateada y un campo `status` indicando si está sincronizada.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_get_time_json_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/time.json requested");
@@ -85,7 +94,15 @@ static esp_err_t http_server_get_time_json_handler(httpd_req_t *req)
 /*******************************************************
  * Manejadores JSON del sistema
  ********************************************************/
-
+/**
+ * @brief Handler HTTP que devuelve el estado del sistema en JSON.
+ *
+ * Lee el último `system_state` desde la cola de estado y construye un
+ * JSON con temperatura, estado PIR, modo, PWM y límites automáticos.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_get_system_state_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/systemState requested");
@@ -114,6 +131,15 @@ static esp_err_t http_server_get_system_state_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP que establece el modo de operación del sistema.
+ *
+ * Espera un JSON con el campo `mode` y envía una estructura `config_update_t`
+ * a la cola de configuración para que otras tareas apliquen el cambio.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si el request fue procesado
+ */
 static esp_err_t http_server_set_mode_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/setMode requested");
@@ -149,6 +175,15 @@ static esp_err_t http_server_set_mode_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP para guardar configuración manual (PWM).
+ *
+ * Recibe JSON con `pwm` y envía un `config_update_t` con `manual_pwm`
+ * a la cola de configuración.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si el request fue procesado
+ */
 static esp_err_t http_server_save_manual_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/saveManual requested");
@@ -181,6 +216,16 @@ static esp_err_t http_server_save_manual_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+
+/**
+ * @brief Handler HTTP para guardar configuración automática (rangos de temperatura).
+ *
+ * Recibe JSON con `tMin` y `tMax` y envía un `config_update_t` a la cola
+ * de configuración con los límites automáticos.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si el request fue procesado
+ */
 static esp_err_t http_server_save_auto_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/saveAuto requested");
@@ -216,6 +261,15 @@ static esp_err_t http_server_save_auto_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP para guardar registros programados (schedules).
+ *
+ * Procesa un arreglo `registers` en el JSON de la petición y lo transforma
+ * en una estructura `config_update_t` que se envía a la cola de configuración.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si el request fue procesado
+ */
 static esp_err_t http_server_save_programmed_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "/saveProgrammed requested");
@@ -272,7 +326,13 @@ static esp_err_t http_server_save_programmed_handler(httpd_req_t *req)
 }
 
 /**
- * @brief Handler para obtener los registros programados actuales
+ * @brief Handler HTTP que devuelve los registros programados en JSON.
+ *
+ * Lee los registros programados desde `system_state` y devuelve un arreglo
+ * JSON con la información de cada registro (horarios, límites y si está activo).
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
  */
 static esp_err_t http_server_get_programmed_handler(httpd_req_t *req)
 {
@@ -384,6 +444,15 @@ static esp_err_t http_server_save_wifi_handler(httpd_req_t *req)
  * Manejadores de archivos estáticos (HTML/JS/CSS)
  ********************************************************/
 
+ /**
+ * @brief Handler HTTP para servir la página index (HTML embebido).
+ *
+ * Administra la respuesta para la ruta `/` sirviendo el recurso HTML
+ * embebido en la sección de binarios del firmware.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_index_html_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
@@ -392,6 +461,12 @@ static esp_err_t http_server_index_html_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP para servir `jquery-3.3.1.min.js` embebido.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_jquery_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "application/javascript");
@@ -400,6 +475,12 @@ static esp_err_t http_server_jquery_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP para servir `app.css` embebido.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_app_css_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/css");
@@ -408,6 +489,12 @@ static esp_err_t http_server_app_css_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP para servir `app.js` embebido.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_app_js_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "application/javascript");
@@ -416,6 +503,12 @@ static esp_err_t http_server_app_js_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/**
+ * @brief Handler HTTP para servir el `favicon.ico` embebido.
+ *
+ * @param req Puntero a la petición HTTP recibida
+ * @return esp_err_t ESP_OK si la respuesta se envía correctamente
+ */
 static esp_err_t http_server_favicon_ico_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "image/x-icon");

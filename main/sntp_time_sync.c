@@ -27,8 +27,15 @@ void time_sync_notification_cb(struct timeval *tv)
     sntp_time_sync_print_time(); /* Opcional: imprimir inmediatamente */
 }
 
-/* Función de inicialización SNTP */
-
+/**
+ * @brief Inicializa y configura el cliente SNTP.
+ *
+ * Configura servidores NTP, zona horaria y espera a que la sincronización
+ * inicial ocurra (con un número limitado de reintentos).
+ *
+ * @param None
+ * @return void
+ */
 void sntp_time_sync_init(void)
 {
     ESP_LOGI(TAG, "Initializing SNTP");
@@ -59,6 +66,12 @@ void sntp_time_sync_init(void)
     // ...
 }
 
+/**
+ * @brief Detiene el cliente SNTP si está activo.
+ *
+ * @param None
+ * @return void
+ */
 void sntp_time_sync_stop(void)
 {
     
@@ -68,6 +81,12 @@ void sntp_time_sync_stop(void)
     }
 }
 
+/**
+ * @brief Devuelve la hora actual del sistema como `struct tm`.
+ *
+ * @param None
+ * @return struct tm Estructura con la hora local actual
+ */
 struct tm sntp_time_sync_get_time(void)
 {
     time_t now;

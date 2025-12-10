@@ -27,6 +27,15 @@ static QueueHandle_t pir_evt_queue = NULL;
 // Forward
 void pir_event_task(void *pvParameters);
 
+/**
+ * @brief ISR de GPIO que encola el nivel crudo del pin del PIR.
+ *
+ * Esta rutina se ejecuta en contexto de interrupción y envía el nivel
+ * leido al `pir_evt_queue` para procesamiento en la tarea de evento.
+ *
+ * @param arg Número del GPIO (pasado como puntero vía gpio_isr_handler_add)
+ * @return void
+ */
 static void IRAM_ATTR pir_gpio_isr_handler(void *arg)
 {
     uint32_t gpio_num = (uint32_t)arg;
@@ -41,7 +50,14 @@ static void IRAM_ATTR pir_gpio_isr_handler(void *arg)
 }
 
 /**
- * @brief Tarea que procesa eventos del PIR (debounce y normalización de nivel)
+ * @brief Tarea que procesa eventos del PIR (debounce y normalización de nivel).
+ *
+ * Lee los eventos encolados por la ISR, aplica debounce y normaliza la
+ * semántica del sensor (activo-bajo/alto). Publica el estado final en la
+ * cola central de PIR para consumo por otras tareas.
+ *
+ * @param pvParameters Parámetros de tarea (no utilizados)
+ * @return void
  */
 void pir_event_task(void *pvParameters)
 {

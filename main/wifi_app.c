@@ -33,10 +33,16 @@ static QueueHandle_t wifi_app_queue_handle;
 /* Los manejadores esp_netif se crean por tarea y no son globales. */
 
 /**
- * @brief Manejador de eventos WiFi de la aplicación.
+ * @brief Manejador de eventos WiFi/IP para la aplicación.
  *
- * Procesa eventos del driver WiFi (`WIFI_EVENT`) y del stack IP (`IP_EVENT`)
- * y publica mensajes apropiados a la cola de la aplicación cuando corresponde.
+ * Procesa eventos del driver WiFi (WIFI_EVENT) y del stack IP (IP_EVENT)
+ * y publica mensajes apropiados a la cola de la aplicación.
+ *
+ * @param arg Puntero de usuario (no utilizado)
+ * @param event_base Base del evento (WIFI_EVENT o IP_EVENT)
+ * @param event_id Identificador del evento
+ * @param event_data Datos específicos del evento
+ * @return void
  */
 static void wifi_app_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -302,12 +308,27 @@ void wifi_app_task(void *pvParameters)
     }
 }
 
+/**
+ * @brief Intenta conectar la estación WiFi (STA).
+ *
+ * Realiza una llamada segura a `esp_wifi_connect()` para iniciar la conexión
+ * con las credenciales configuradas.
+ *
+ * @param None
+ * @return void
+ */
 void wifi_app_connect_sta(void)
 {
     ESP_LOGI(TAG, "Connecting STA (safe call)...");
     ESP_ERROR_CHECK(esp_wifi_connect());
 }
 
+/**
+ * @brief Envía un mensaje al hilo/cola de la aplicación WiFi.
+ *
+ * @param msgID Identificador del mensaje (`wifi_app_message_e`)
+ * @return BaseType_t `pdTRUE` si el envío fue exitoso, `pdFALSE` en caso contrario
+ */
 BaseType_t wifi_app_send_message(wifi_app_message_e msgID)
 {
     wifi_app_queue_message_t msg;
@@ -315,6 +336,15 @@ BaseType_t wifi_app_send_message(wifi_app_message_e msgID)
     return xQueueSend(wifi_app_queue_handle, &msg, portMAX_DELAY);
 }
 
+/**
+ * @brief Inicializa la parte de la aplicación WiFi usada por otros módulos.
+ *
+ * Configura el nivel de logs de WiFi y crea la cola de mensajes usada por
+ * `wifi_app_task`. No crea la tarea principal; esa responsabilidad recae en `main`.
+ *
+ * @param None
+ * @return void
+ */
 void wifi_app_start(void)
 {
     ESP_LOGI(TAG, "STARTING WIFI APPLICATION");
@@ -326,8 +356,32 @@ void wifi_app_start(void)
     wifi_app_queue_handle = xQueueCreate(3, sizeof(wifi_app_queue_message_t));
 }
 
-/* Implementación de funciones dummy (o que requieren lógica NVS) - dejadas así para el ejemplo */
+/* Implementación de funciones dummy (o que requieren lógica NVS) */
+/**
+ * @brief Devuelve la configuración WiFi actual (dummy en esta implementación).
+ *
+ * @return wifi_config_t* Puntero a la estructura de configuración o NULL si no disponible
+ */
 wifi_config_t* wifi_app_get_wifi_config(void) { return NULL; }
+
+/**
+ * @brief Registra un callback para notificaciones de conexión WiFi (dummy).
+ *
+ * @param cb Puntero a la función callback
+ * @return void
+ */
 void wifi_app_set_callback(wifi_connected_event_callback_t cb) {}
+
+/**
+ * @brief Invoca el callback registrado para evento de conexión (dummy).
+ *
+ * @return void
+ */
 void wifi_app_call_callback(void) {}
+
+/**
+ * @brief Obtiene la intensidad de señal RSSI de la red conectada (dummy).
+ *
+ * @return int8_t Valor RSSI (dBm) o 0 si no disponible
+ */
 int8_t wifi_app_get_rssi(void) { return 0; }

@@ -21,12 +21,17 @@
  * - Lee temperatura, PIR y configuración
  * - Calcula el PWM según el modo
  * - Envía el PWM al ventilador y actualiza el estado del sistema
+ *
+ * @param pvParameters Parámetros de la tarea (no usados)
+ * @return void
  */
 void system_control_task(void *pvParameters);
 
 /**
  * @brief Copia los 3 registros programados en el buffer del llamador
- * @return 0 en éxito
+ *
+ * @param out Array de 3 `scheduled_register_t` donde se colocarán los registros
+ * @return int 0 en éxito, -1 en caso de error
  */
 int system_state_get_registers(scheduled_register_t out[3]);
 

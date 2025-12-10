@@ -1,10 +1,10 @@
 /*
  * fan_control.c
  *
- * Hardware abstraction for the fan PWM using LEDC. Exposes simple
- * initialization and set/get APIs. The module deliberately does not
- * keep internal mutable state; the authoritative PWM value is provided
- * by the `system_state` module and read via the system state queue.
+ * Control del ventilador mediante PWM usando LEDC.
+ * Inicialización y APIs de set/get. El módulo deliberadamente no
+ * mantiene estado mutable interno; el valor PWM autorizado es proporcionado
+ * por el módulo `system_state` y leído a través de la cola de estado del sistema.
  */
 
 #include "fan_control.h"
@@ -19,6 +19,12 @@ static const char *TAG = "FAN_CONTROL";
 
 /**
  * @brief Inicializa el controlador del ventilador
+ * Configura el timer y el canal LEDC usados para generar la señal PWM
+ * que controla la velocidad del ventilador. No mantiene estado interno;
+ * la referencia de PWM proviene del módulo `system_state`.
+ *
+ * @param None
+ * @return void
  */
 void fan_control_init(void)
 {
@@ -54,7 +60,14 @@ void fan_control_init(void)
 }
 
 /**
- * @brief Establece el PWM del ventilador (0-100%)
+ * @brief Establece el PWM del ventilador en porcentaje.
+ *
+ * Normaliza el valor entre 0 y 100, lo convierte al rango del LEDC
+ * (resolución configurada en `FAN_LEDC_RESOLUTION`) y aplica el duty
+ * correspondiente al canal LEDC configurado.
+ *
+ * @param pwm_percent El porcentaje de PWM deseado (0 = apagado, 100 = máximo).
+ * @return void
  */
 void fan_control_set_pwm(int pwm_percent)
 {
@@ -77,7 +90,14 @@ void fan_control_set_pwm(int pwm_percent)
 }
 
 /**
- * @brief Obtiene el PWM actual
+ * @brief Recupera el PWM actual desde la cola de estado del sistema.
+ *
+ * Busca el último estado publicado en la cola de `system_state` y devuelve
+ * el valor `current_pwm` encontrado. Si la cola no está disponible o
+ * no hay estado, devuelve 0.
+ *
+ * @param None
+ * @return int El porcentaje de PWM actual (0-100). 0 si no hay estado disponible.
  */
 int fan_control_get_pwm(void)
 {

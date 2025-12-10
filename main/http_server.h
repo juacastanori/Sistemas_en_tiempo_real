@@ -58,38 +58,64 @@ typedef struct {
  * ============================================================*/
 
 /**
- * @brief Envía un mensaje a la cola
+ * @brief Envía un mensaje a la cola del monitor HTTP.
+ *
+ * @param msgID Identificador del mensaje (`http_server_message_e`)
+ * @return BaseType_t `pdTRUE` si el mensaje se encoló correctamente
  */
 BaseType_t http_server_monitor_send_message(http_server_message_e msgID);
 
 /**
  * @brief Inicia el servidor HTTP.
+ *
+ * Envía una solicitud a la tarea monitor para iniciar el servicio HTTP.
+ *
+ * @param None
+ * @return void
  */
 void http_server_start(void);
 
 /**
  * @brief Inicializa la cola interna del monitor para el servidor HTTP.
+ *
  * Llamar desde `app_main` antes de crear la tarea `http_server_monitor`.
+ *
+ * @param None
+ * @return void
  */
 void http_server_init_monitor_queue(void);
 
 /**
  * @brief Función de tarea del monitor del servidor HTTP (crear desde main).
+ *
+ * @param parameter Parámetro pasado a la tarea (no usado)
+ * @return void
  */
 void http_server_monitor(void *parameter);
 
 /**
  * @brief Establece el handle de la tarea monitor interna (llamar desde main después de crear la tarea).
+ *
+ * @param handle Manejador de la tarea monitor (no utilizado internamente)
+ * @return void
  */
 void http_server_set_monitor_task_handle(TaskHandle_t handle);
 
 /**
  * @brief Detiene el servidor HTTP.
+ *
+ * Envía una solicitud a la tarea monitor para detener el servicio HTTP.
+ *
+ * @param None
+ * @return void
  */
 void http_server_stop(void);
 
 /**
- * @brief Callback del timer ejecutado después de una actualización de firmware exitosa.
+ * @brief Callback ejecutado para reiniciar el dispositivo tras una OTA exitosa.
+ *
+ * @param arg Argumento de callback (no utilizado)
+ * @return void
  */
 void http_server_fw_update_reset_callback(void *arg);
 

@@ -25,7 +25,13 @@ static QueueHandle_t http_server_status_queue = NULL; // int fw_update_status (u
 static SemaphoreHandle_t config_mutex = NULL;
 
 /**
- * @brief Inicializa todas las colas y semáforos
+ * @brief Inicializa todas las colas y semáforos.
+ *
+ * Crea las colas y mutex necesarios para la comunicación entre tareas.
+ * Debe llamarse durante la inicialización del sistema.
+ *
+ * @param None
+ * @return int 0 si las estructuras se crearon correctamente, -1 en caso de error
  */
 int queues_init(void)
 {
@@ -90,7 +96,13 @@ int queues_init(void)
 }
 
 /**
- * @brief Desinicializa todas las colas y semáforos
+ * @brief Desinicializa todas las colas y semáforos.
+ *
+ * Elimina las colas y libera el mutex asociado. No debe llamarse si
+ * existen tareas que aún usan las colas.
+ *
+ * @param None
+ * @return int 0 siempre (actualmente no falla)
  */
 int queues_deinit(void)
 {
@@ -109,43 +121,80 @@ int queues_deinit(void)
 }
 
 /**
- * @brief Obtener handles de las colas (para otros módulos)
+ * @brief Devuelve el handle de la cola de actualizaciones de configuración.
+ *
+ * @return QueueHandle_t Handle de la cola `config_update_queue` o NULL si no creada
  */
 QueueHandle_t queues_get_config_update_queue(void)
 {
     return config_update_queue;
 }
 
+/**
+ * @brief Devuelve el handle de la cola de estado del sistema.
+ *
+ * @return QueueHandle_t Handle de la cola `system_state_queue` o NULL si no creada
+ */
 QueueHandle_t queues_get_system_state_queue(void)
 {
     return system_state_queue;
 }
 
+/**
+ * @brief Devuelve el handle de la cola de señales para el ventilador.
+ *
+ * @return QueueHandle_t Handle de la cola `fan_signal_queue` o NULL si no creada
+ */
 QueueHandle_t queues_get_fan_signal_queue(void)
 {
     return fan_signal_queue;
 }
 
+/**
+ * @brief Devuelve el handle de la cola de temperatura (termistor).
+ *
+ * @return QueueHandle_t Handle de la cola `temperature_queue` o NULL si no creada
+ */
 QueueHandle_t queues_get_temperature_queue(void)
 {
     return temperature_queue;
 }
 
+/**
+ * @brief Devuelve el handle de la cola del sensor PIR.
+ *
+ * @return QueueHandle_t Handle de la cola `pir_state_queue` o NULL si no creada
+ */
 QueueHandle_t queues_get_pir_queue(void)
 {
     return pir_state_queue;
 }
 
+/**
+ * @brief Devuelve el handle de la cola del monitor del servidor HTTP.
+ *
+ * @return QueueHandle_t Handle de la cola `http_server_monitor_queue` o NULL si no creada
+ */
 QueueHandle_t queues_get_http_monitor_queue(void)
 {
     return http_server_monitor_queue;
 }
 
+/**
+ * @brief Devuelve el handle de la cola de estado del servidor HTTP.
+ *
+ * @return QueueHandle_t Handle de la cola `http_server_status_queue` o NULL si no creada
+ */
 QueueHandle_t queues_get_http_status_queue(void)
 {
     return http_server_status_queue;
 }
 
+/**
+ * @brief Devuelve el mutex que protege la configuración compartida.
+ *
+ * @return SemaphoreHandle_t Handle del mutex `config_mutex` o NULL si no creado
+ */
 SemaphoreHandle_t queues_get_config_mutex(void)
 {
     return config_mutex;

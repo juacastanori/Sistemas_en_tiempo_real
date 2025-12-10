@@ -160,6 +160,16 @@ void thermistor_read_task(void *pvParameters)
 
 /* --- Implementación de la interfaz pública --- */
 
+/**
+ * @brief Inicializa el hardware ADC y devuelve un contexto para el termistor.
+ *
+ * Crea y configura la unidad ADC one-shot y, si es posible, la calibración.
+ * Devuelve un puntero a `thermistor_ctx_t` que debe pasarse como `pvParameters`
+ * a la tarea `thermistor_read_task()` para realizar lecturas periódicas.
+ *
+ * @param None
+ * @return void* Puntero a `thermistor_ctx_t` inicializado, o NULL en caso de error
+ */
 void *thermistor_init(void)
 {
     /* La cola de temperatura se crea centralmente en queues_init(); nada que hacer aquí */
@@ -201,6 +211,11 @@ void *thermistor_init(void)
     return ctx;
 }
 
+/**
+ * @brief Devuelve el handle de la cola utilizada para publicar temperatura.
+ *
+ * @return QueueHandle_t Handle de la cola `temperature_queue` o NULL si no creada
+ */
 QueueHandle_t get_temperature_queue_handle(void)
 {
     /* Retorna la cola central para temperatura */

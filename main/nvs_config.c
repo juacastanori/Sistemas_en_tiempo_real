@@ -28,7 +28,14 @@ static const char TAG[] = "NVS_CONFIG";
 #define NVS_KEY_WIFI_PASSWORD   "wifi_password"
 
 /**
- * @brief Inicializa NVS (almacenamiento Flash)
+ * @brief Inicializa NVS (almacenamiento Flash).
+ *
+ * Inicializa la partición NVS y maneja su re-inicialización si la
+ * partición requiere borrado. Debe llamarse antes de cualquier operación
+ * de lectura/escritura en NVS.
+ *
+ * @param None
+ * @return int 0 si la inicialización fue exitosa, -1 en caso de error
  */
 int nvs_config_init(void)
 {
@@ -52,7 +59,13 @@ int nvs_config_init(void)
 }
 
 /**
- * @brief Desinicializa NVS
+ * @brief Desinicializa NVS.
+ *
+ * Libera recursos usados por el módulo NVS. No es estrictamente necesario
+ * en todas las plataformas, pero se proporciona por completitud.
+ *
+ * @param None
+ * @return int 0 siempre (actualmente no falla)
  */
 int nvs_config_deinit(void)
 {
@@ -65,6 +78,15 @@ int nvs_config_deinit(void)
  *           Modo Manual: Guardar y cargar PWM
  * ============================================================*/
 
+/**
+ * @brief Guarda el valor PWM manual en NVS.
+ *
+ * El valor se normaliza al rango 0-100 y se almacena bajo la clave
+ * `manual_pwm`.
+ *
+ * @param pwm_value Valor de PWM a guardar (0-100)
+ * @return int 0 si se guardó correctamente, -1 en caso de error
+ */
 int nvs_config_save_manual_pwm(int pwm_value)
 {
     nvs_handle_t handle;
@@ -99,6 +121,15 @@ int nvs_config_save_manual_pwm(int pwm_value)
     }
 }
 
+/**
+ * @brief Carga el valor PWM manual desde NVS.
+ *
+ * Lee la clave `manual_pwm` y devuelve el valor a través del puntero
+ * proporcionado.
+ *
+ * @param pwm_value Puntero donde se almacenará el valor leído
+ * @return int 0 si se cargó correctamente, -1 en caso de error
+ */
 int nvs_config_load_manual_pwm(int *pwm_value)
 {
     nvs_handle_t handle;
@@ -136,6 +167,16 @@ int nvs_config_load_manual_pwm(int *pwm_value)
  *        Modo Automático: Guardar y cargar Tmin/Tmax
  * ============================================================*/
 
+/**
+ * @brief Guarda los límites automáticos de temperatura en NVS.
+ *
+ * Los floats se reinterpretan como `uint32_t` y se almacenan bajo las
+ * claves `auto_tmin` y `auto_tmax`.
+ *
+ * @param tmin Temperatura mínima automática
+ * @param tmax Temperatura máxima automática
+ * @return int 0 si se guardó correctamente, -1 en caso de error
+ */
 int nvs_config_save_auto_temps(float tmin, float tmax)
 {
     nvs_handle_t handle;
@@ -177,6 +218,16 @@ int nvs_config_save_auto_temps(float tmin, float tmax)
     }
 }
 
+/**
+ * @brief Carga los límites automáticos de temperatura desde NVS.
+ *
+ * Reinterpreta los valores almacenados como floats y los devuelve
+ * mediante los punteros provistos.
+ *
+ * @param tmin Puntero para recibir la temperatura mínima
+ * @param tmax Puntero para recibir la temperatura máxima
+ * @return int 0 si se cargó correctamente, -1 en caso de error
+ */
 int nvs_config_load_auto_temps(float *tmin, float *tmax)
 {
     nvs_handle_t handle;
@@ -221,6 +272,16 @@ int nvs_config_load_auto_temps(float *tmin, float *tmax)
  *      Modo Programado: Guardar y cargar registros
  * ============================================================*/
 
+/**
+ * @brief Guarda un registro programado en NVS.
+ *
+ * Serializa la estructura `scheduled_register_t` como blob y la guarda
+ * bajo la clave correspondiente al índice (0..2).
+ *
+ * @param index Índice del registro (0..2)
+ * @param reg Puntero a la estructura del registro a guardar
+ * @return int 0 si se guardó correctamente, -1 en caso de error
+ */
 int nvs_config_save_register(int index, const scheduled_register_t *reg)
 {
     nvs_handle_t handle;
@@ -272,6 +333,16 @@ int nvs_config_save_register(int index, const scheduled_register_t *reg)
     }
 }
 
+/**
+ * @brief Carga un registro programado desde NVS.
+ *
+ * Lee el blob correspondiente al índice solicitado y lo deserializa en
+ * la estructura proporcionada.
+ *
+ * @param index Índice del registro (0..2)
+ * @param reg Puntero donde se almacenará el registro cargado
+ * @return int 0 si se cargó correctamente, -1 en caso de error
+ */
 int nvs_config_load_register(int index, scheduled_register_t *reg)
 {
     nvs_handle_t handle;
@@ -319,6 +390,15 @@ int nvs_config_load_register(int index, scheduled_register_t *reg)
     }
 }
 
+/**
+ * @brief Guarda los 3 registros programados en NVS.
+ *
+ * Invoca `nvs_config_save_register` para cada registro y devuelve
+ * error si cualquiera de las operaciones falla.
+ *
+ * @param registers Puntero al arreglo de 3 registros
+ * @return int 0 si se guardaron correctamente, -1 en caso de error
+ */
 int nvs_config_save_all_registers(const scheduled_register_t *registers)
 {
     int ret;
@@ -340,6 +420,15 @@ int nvs_config_save_all_registers(const scheduled_register_t *registers)
     return 0;
 }
 
+/**
+ * @brief Carga los 3 registros programados desde NVS.
+ *
+ * Si un registro no existe o falla la carga, se inicializa con valores
+ * por defecto y la función continúa con el siguiente registro.
+ *
+ * @param registers Puntero al arreglo donde se almacenarán los registros
+ * @return int 0 si la operación completó (registros faltantes usan valores por defecto)
+ */
 int nvs_config_load_all_registers(scheduled_register_t *registers)
 {
     int ret;
@@ -372,6 +461,14 @@ int nvs_config_load_all_registers(scheduled_register_t *registers)
  *           HELPER: Limpiar todas las configuraciones
  * ============================================================*/
 
+/**
+ * @brief Borra todas las configuraciones almacenadas en NVS.
+ *
+ * Elimina todas las claves en el espacio de nombres de la aplicación.
+ *
+ * @param None
+ * @return int 0 si se borró correctamente, -1 en caso de error
+ */
 int nvs_config_erase_all(void)
 {
     nvs_handle_t handle;

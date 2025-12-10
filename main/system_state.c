@@ -19,7 +19,16 @@
 static const char TAG[] = "SYSTEM_STATE";
 
 /**
- * @brief Carga la configuración desde flash al inicio
+ * @brief Carga la configuración desde flash al inicio.
+ *
+ * Rellena los valores iniciales usados por la tarea de control leyendo
+ * NVS y cargando los registros programados.
+ *
+ * @param current_pwm_out Puntero donde se almacenará el PWM manual inicial
+ * @param auto_t_min_out Puntero donde se almacenará la temperatura mínima automática
+ * @param auto_t_max_out Puntero donde se almacenará la temperatura máxima automática
+ * @param registers_out Array de 3 `scheduled_register_t` para recibir los registros programados
+ * @return void
  */
 static void load_initial_config(int *current_pwm_out, float *auto_t_min_out, float *auto_t_max_out, scheduled_register_t registers_out[3])
 {
@@ -96,6 +105,15 @@ static void handle_config_update(const config_update_t *update, int *current_mod
     }
 }
 
+/**
+ * @brief Obtiene una copia de los registros programados actuales.
+ *
+ * Lee el estado publicado en la `system_state_queue` y copia los 3 registros
+ * al arreglo provisto.
+ *
+ * @param out Array de 3 `scheduled_register_t` donde se copiarán los registros
+ * @return int 0 si la operación fue exitosa, -1 en caso de error
+ */
 int system_state_get_registers(scheduled_register_t out[3])
 {
     if (out == NULL) return -1;
